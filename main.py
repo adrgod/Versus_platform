@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 
 from mutagen.easyid3 import EasyID3
+from mutagen.mp3 import MP3
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -36,10 +37,11 @@ def clean_track_name(trackname):
 
 def read_metadata(file_path):
     file_info = EasyID3(file_path)
+    audio_info = MP3(file_path).info
     file_data = {"file_path": str(file_path)}
 
     for att in file_attribtes:
-        value = file_info.get(att)
+        value = round(audio_info.length, 2) if att == "length" else file_info.get(att)
         if isinstance(value, list):
             file_data[att] = ", ".join(str(item) for item in value)
         else:
@@ -59,33 +61,16 @@ def db_create_schema(con):
 
     cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE)")
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, release_year, genre)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre)")
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_track(track_id INTEGER PRIMARY KEY, album_id, track_name, track_number, track_length)")
+    #An album can have the same name for different artists. An artist can have two albums with same name, but an album shouldn't have the same name, artist, year and disc number. makes sense?
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_album_artist_name_number_year
+        ON tbl_album (artist_id, album_name, disc_number, release_year)
+    """)
 
-    cur.execute("""
-        UPDATE tbl_track
-        SET album_id = (
-            SELECT MIN(other.album_id)
-            FROM tbl_album AS current
-            JOIN tbl_album AS other
-                ON other.artist_id = current.artist_id
-                AND other.album_name = current.album_name
-            WHERE current.album_id = tbl_track.album_id
-        )
-    """)
-    cur.execute("""
-        DELETE FROM tbl_album
-        WHERE album_id NOT IN (
-            SELECT MIN(album_id)
-            FROM tbl_album
-            GROUP BY artist_id, album_name
-        )
-    """)
-    cur.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_album_artist_name
-        ON tbl_album (artist_id, album_name)
-    """)
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_track(track_id INTEGER PRIMARY KEY, album_id, track_name, track_number, track_length INTEGER)")
+
     cur.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_track_album_name_number
         ON tbl_track (album_id, track_name, track_number)
@@ -122,6 +107,7 @@ def db_load_data(con, records):
         albums.append({
             "artist_id": artist_id,
             "album": record["album"],
+            "discnumber": record["discnumber"] or 1,
             "date": record["date"],
             "genre": record["genre"],
         })
@@ -129,9 +115,9 @@ def db_load_data(con, records):
     cur.executemany(
         """
         INSERT OR IGNORE INTO tbl_album 
-        (artist_id, album_name, release_year, genre)
+        (artist_id, album_name, disc_number, release_year, genre)
         VALUES
-            (:artist_id, :album, :date, :genre)
+            (:artist_id, :album, :discnumber, :date, :genre)
         """,
         albums
     )
