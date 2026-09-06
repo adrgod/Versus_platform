@@ -57,14 +57,114 @@ def db_create_schema(con):
 
     cur = con.cursor()
 
-    cur.execute("CREATE TABLE tbl_artist(artisit_id, artist_name)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE)")
 
-    cur.execute("CREATE TABLE tbl_album(album_id, artisti_id, album_name, release_year, genre)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, release_year, genre)")
 
-    cur.execute("CREATE TABLE tbl_track(track_id, album_id, track_name, track_number, track_length)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_track(track_id INTEGER PRIMARY KEY, album_id, track_name, track_number, track_length)")
 
-def db_load_data(con):
+    cur.execute("""
+        UPDATE tbl_track
+        SET album_id = (
+            SELECT MIN(other.album_id)
+            FROM tbl_album AS current
+            JOIN tbl_album AS other
+                ON other.artist_id = current.artist_id
+                AND other.album_name = current.album_name
+            WHERE current.album_id = tbl_track.album_id
+        )
+    """)
+    cur.execute("""
+        DELETE FROM tbl_album
+        WHERE album_id NOT IN (
+            SELECT MIN(album_id)
+            FROM tbl_album
+            GROUP BY artist_id, album_name
+        )
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_album_artist_name
+        ON tbl_album (artist_id, album_name)
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_track_album_name_number
+        ON tbl_track (album_id, track_name, track_number)
+    """)
+
+    
+def db_load_data(con, records):
+
     cur = con.cursor()
+
+    artists_data = [
+        {"artist": record["artist"]}
+        for record in records
+    ]
+
+    cur.executemany(
+        """INSERT OR IGNORE INTO tbl_artist (artist_name)
+        VALUES (:artist)
+        """,
+        artists_data,
+    )
+    artist_ids = dict(
+        cur.execute(
+            "SELECT artist_name, artist_id FROM tbl_artist"
+        ).fetchall()
+    )
+
+    albums = []
+    tracks = []
+
+    for record in records:
+        artist_id = artist_ids[record["artist"]]
+
+        albums.append({
+            "artist_id": artist_id,
+            "album": record["album"],
+            "date": record["date"],
+            "genre": record["genre"],
+        })
+
+    cur.executemany(
+        """
+        INSERT OR IGNORE INTO tbl_album 
+        (artist_id, album_name, release_year, genre)
+        VALUES
+            (:artist_id, :album, :date, :genre)
+        """,
+        albums
+    )
+
+    album_ids = {
+        (artist_id, album_name): album_id
+        for artist_id, album_name, album_id in cur.execute(
+            """
+            SELECT artist_id, album_name, album_id
+            FROM tbl_album
+            """
+        )
+    }
+
+    for record in records:
+        album_id = album_ids[artist_ids[record["artist"]], record["album"]]
+
+        tracks.append({
+            "album_id": album_id,
+            "title": record["title"],
+            "track_number": record["tracknumber"],
+            "length": record["length"],
+        })
+
+    cur.executemany(
+        """
+        INSERT OR IGNORE INTO tbl_track
+            (album_id, track_name, track_number, track_length)
+        VALUES
+            (:album_id, :title, :track_number, :length)
+        """,
+        tracks,
+    )
 
 def start():
     mp3_files = sorted(
@@ -73,22 +173,24 @@ def start():
         if file_path.is_file() and file_path.suffix.lower() == ".mp3"
     )
 
+    records = []
+
     for file_path in mp3_files:
         try:
-            file_data = read_metadata(file_path)
+            records.append(read_metadata(file_path))
         except Exception as error:
             print(f"Could not read {file_path}: {error}")
             continue
 
-        print(f"\nFile: {file_data['file_path']}")
-        for elem, value in file_data.items():
-            if elem == "file_path":
-                continue
-            print(f" Value for {elem} is {value or '[empty]'}")
-
+    #DB Stuff
     con = sqlite3.connect("music_data.db")
-    
+
     db_create_schema(con)
+    db_load_data(con, records)
+
+    con.commit()
+    con.close()
+    
 
 if __name__ == '__main__':
     start()
