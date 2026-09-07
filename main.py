@@ -50,8 +50,8 @@ def read_metadata(file_path):
         if att in NAME_FIELDS:
             file_data[att] = format_name(file_data[att])
 
-        if att in NAME_FIELDS:
-            file_data[att] = f'"{clean_track_name(file_data[att])}"'
+        if att == "title":
+            file_data[att] = clean_track_name(file_data[att])
 
     return file_data
 
@@ -59,9 +59,9 @@ def db_create_schema(con):
 
     cur = con.cursor()
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE, when_loaded DATETIME)")
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre, when_loaded DATETIME)")
 
     #An album can have the same name for different artists. An artist can have two albums with same name, but an album shouldn't have the same name, artist, year and disc number. makes sense?
     cur.execute("""
@@ -69,7 +69,7 @@ def db_create_schema(con):
         ON tbl_album (artist_id, album_name, disc_number, release_year)
     """)
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_track(track_id INTEGER PRIMARY KEY, album_id, track_name, track_number, track_length INTEGER)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_track(track_id INTEGER PRIMARY KEY, album_id, track_name, track_number, track_length INTEGER, dq_confidence FLOAT, when_loaded DATETIME)")
 
     cur.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_track_album_name_number
@@ -87,8 +87,8 @@ def db_load_data(con, records):
     ]
 
     cur.executemany(
-        """INSERT OR IGNORE INTO tbl_artist (artist_name)
-        VALUES (:artist)
+        """INSERT OR IGNORE INTO tbl_artist (artist_name, when_loaded)
+        VALUES (:artist, CURRENT_TIMESTAMP)
         """,
         artists_data,
     )
@@ -115,9 +115,9 @@ def db_load_data(con, records):
     cur.executemany(
         """
         INSERT OR IGNORE INTO tbl_album 
-        (artist_id, album_name, disc_number, release_year, genre)
+        (artist_id, album_name, disc_number, release_year, genre, when_loaded)
         VALUES
-            (:artist_id, :album, :discnumber, :date, :genre)
+            (:artist_id, :album, :discnumber, :date, :genre, CURRENT_TIMESTAMP)
         """,
         albums
     )
@@ -140,17 +140,47 @@ def db_load_data(con, records):
             "title": record["title"],
             "track_number": record["tracknumber"],
             "length": record["length"],
+            "dq_confidence": record["dq_confidence"]
         })
 
     cur.executemany(
         """
         INSERT OR IGNORE INTO tbl_track
-            (album_id, track_name, track_number, track_length)
+            (album_id, track_name, track_number, track_length, dq_confidence, when_loaded)
         VALUES
-            (:album_id, :title, :track_number, :length)
+            (:album_id, :title, :track_number, :length, :dq_confidence ,CURRENT_TIMESTAMP)
         """,
         tracks,
     )
+
+def normalize_for_path_match(value):
+    return re.sub(r"[\s_./\\-]+", "", str(value).casefold())
+
+
+def validate_if_tags_in_filepath(tag_text, filepath_text):
+    return normalize_for_path_match(tag_text) in normalize_for_path_match(filepath_text)
+
+
+def calculate_confidence_for_track(track, file_path):
+
+    confidence_level = 0.0
+
+    if validate_if_tags_in_filepath(track["artist"], file_path):
+        confidence_level += 0.3
+    if validate_if_tags_in_filepath(track["album"], file_path):
+        confidence_level += 0.3
+    if validate_if_tags_in_filepath(track["title"], file_path):
+        confidence_level += 0.4
+
+    return round(confidence_level, 2)
+
+
+
+def add_track_tag_data_quality_confidence(records, mp3_files):
+    for track, file_path in zip(records, mp3_files):
+        track['dq_confidence'] = calculate_confidence_for_track(track, file_path)
+
+    return records
 
 def start():
     mp3_files = sorted(
@@ -171,8 +201,12 @@ def start():
     #DB Stuff
     con = sqlite3.connect("music_data.db")
 
+    records_with_tags = add_track_tag_data_quality_confidence(records, mp3_files)
+
+    #validate_tag_with_path(records, mp3_files)
+
     db_create_schema(con)
-    db_load_data(con, records)
+    db_load_data(con, records_with_tags)
 
     con.commit()
     con.close()
