@@ -6,10 +6,18 @@ import sqlite3
 
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
+from mutagen.id3 import ID3, ID3NoHeaderError
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
+file_attributes = [
+    'album', 'length', 'mood', 'title', 'artist', 'albumartist', 'discnumber', 'tracknumber', 'language', 'genre', 'date', 'originaldate'
+    ]
+
+quality_attributes = [
+    'album', 'title', 'artist', 'tracknumber', 'genre', 'date'
+    ]
 
 def load_config():
     config_path = PROJECT_DIR / "config.json"
@@ -20,9 +28,7 @@ def load_config():
 config = load_config()
 source_folder = PROJECT_DIR / config["source_data_folder"]
 
-file_attribtes = [
-    'album', 'length', 'mood', 'title', 'artist', 'albumartist', 'discnumber', 'tracknumber', 'language', 'genre', 'date', 'originaldate'
-    ]
+
 
 NAME_FIELDS = {"artist", "album", "albumartist", "title"}
 
@@ -40,7 +46,7 @@ def read_metadata(file_path):
     audio_info = MP3(file_path).info
     file_data = {"file_path": str(file_path)}
 
-    for att in file_attribtes:
+    for att in file_attributes:
         value = round(audio_info.length, 2) if att == "length" else file_info.get(att)
         if isinstance(value, list):
             file_data[att] = ", ".join(str(item) for item in value)
@@ -55,13 +61,29 @@ def read_metadata(file_path):
 
     return file_data
 
+def read_artwork(file_path):
+    
+    try:
+        tags = ID3(file_path)
+    except (ID3NoHeaderError, OSError):
+        return None
+
+    pictures = tags.getall("APIC")
+    if not pictures:
+        return None
+    
+    cover = next((picture for picture in pictures if picture.type == 3), pictures[0])
+    return cover.data
+
+
+
 def db_create_schema(con):
 
     cur = con.cursor()
 
     cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE, when_loaded DATETIME)")
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre, when_loaded DATETIME)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre, album_cover BLOB, band_photo BLOB, when_loaded DATETIME)")
 
     #An album can have the same name for different artists. An artist can have two albums with same name, but an album shouldn't have the same name, artist, year and disc number. makes sense?
     cur.execute("""
@@ -86,6 +108,7 @@ def db_load_data(con, records):
         for record in records
     ]
 
+
     cur.executemany(
         """INSERT OR IGNORE INTO tbl_artist (artist_name, when_loaded)
         VALUES (:artist, CURRENT_TIMESTAMP)
@@ -100,9 +123,18 @@ def db_load_data(con, records):
 
     albums = []
     tracks = []
+    album_cover_cache = {}
 
     for record in records:
         artist_id = artist_ids[record["artist"]]
+        album_key = (
+            artist_id,
+            record["album"],
+            record["discnumber"] or 1,
+            record["date"],
+        )
+        if album_key not in album_cover_cache:
+            album_cover_cache[album_key] = read_artwork(record["file_path"])
 
         albums.append({
             "artist_id": artist_id,
@@ -110,14 +142,17 @@ def db_load_data(con, records):
             "discnumber": record["discnumber"] or 1,
             "date": record["date"],
             "genre": record["genre"],
+            "album_cover": album_cover_cache[album_key],
         })
 
     cur.executemany(
         """
-        INSERT OR IGNORE INTO tbl_album 
-        (artist_id, album_name, disc_number, release_year, genre, when_loaded)
+        INSERT INTO tbl_album 
+        (artist_id, album_name, disc_number, release_year, genre, album_cover, when_loaded)
         VALUES
-            (:artist_id, :album, :discnumber, :date, :genre, CURRENT_TIMESTAMP)
+            (:artist_id, :album, :discnumber, :date, :genre, :album_cover, CURRENT_TIMESTAMP)
+        ON CONFLICT (artist_id, album_name, disc_number, release_year)
+        DO UPDATE SET album_cover = COALESCE(tbl_album.album_cover, excluded.album_cover)
         """,
         albums
     )
@@ -182,6 +217,18 @@ def add_track_tag_data_quality_confidence(records, mp3_files):
 
     return records
 
+def check_empty_fields(records):
+
+    tracks_with_missing_tags = []
+    
+    for record in records:
+        for tag, value in record.items():
+            if tag in quality_attributes and not value:
+                tracks_with_missing_tags.append(record["artist"])
+                print(f"tag: {tag}; value: {value}")
+
+    return tracks_with_missing_tags
+
 def start():
     mp3_files = sorted(
         file_path
@@ -204,6 +251,9 @@ def start():
     records_with_tags = add_track_tag_data_quality_confidence(records, mp3_files)
 
     #validate_tag_with_path(records, mp3_files)
+
+    tracks_with_empty_fields = check_empty_fields(records)
+    print(tracks_with_empty_fields)
 
     db_create_schema(con)
     db_load_data(con, records_with_tags)
