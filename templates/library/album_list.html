@@ -1,0 +1,10 @@
+{% extends "library/base.html" %}
+{% block title %}Albums{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">CATALOG / RELEASES</span><h1>Albums</h1><p class="subheading">Browse the records in your database.</p></div>
+  <form class="search-form" method="get"><input type="search" name="q" value="{{ search }}" placeholder="Album or artist" aria-label="Search albums and artists"><button class="button button-dark" type="submit">Search</button></form>
+</section>
+<div class="album-grid">
+{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}<span class="cover-index">{{ forloop.counter|stringformat:"02d" }}</span></div><strong>{{ album.album_name }}</strong><span>{{ album.artist_name }}</span><small>{{ album.release_year|default:"YEAR UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><span class="empty-mark">∅</span><h3>No albums found</h3><p>Run a library refresh or change the search.</p></div>{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "library/base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<section class="page-heading dashboard-heading" data-scan-status="{{ state.last_scan_status }}">
+  <div><span class="eyebrow">LIBRARY CONTROL / 01</span><h1>Overview</h1><p class="subheading">Your collection, indexed and ready.</p></div>
+  <form method="post" action="{% url 'library:refresh' %}">{% csrf_token %}<button class="button button-primary" type="submit">Refresh library</button></form>
+</section>
+<section class="source-strip">
+  <div class="source-copy"><span class="eyebrow">SOURCE FOLDER</span><strong>{{ state.source_folder }}</strong></div>
+  <a class="button button-light" href="{% url 'library:folder-browser' %}">Change location</a>
+  <div class="scan-state"><span class="status-dot status-{{ state.last_scan_status }}"></span><span>{% if state.last_scan_status == "complete" %}Completed{% elif state.last_scan_status == "partial" %}Completed with warnings{% elif state.last_scan_status == "failed" %}Failed{% elif state.last_scan_status == "scanning" %}Scanning{% else %}Not scanned{% endif %}</span><small>{% if state.last_scan_finished %}Last scan {{ state.last_scan_finished }}{% else %}Not scanned yet{% endif %}</small></div>
+</section>
+{% if state.scan_error %}<details class="scan-errors"><summary>Scan report</summary><pre>{{ state.scan_error }}</pre></details>{% endif %}
+<section class="stat-grid" aria-label="Library counts">
+  <article class="stat-cell stat-primary"><span>ARTISTS</span><strong>{{ stats.artist_count }}</strong><small>distinct names</small></article>
+  <article class="stat-cell"><span>ALBUMS</span><strong>{{ stats.album_count }}</strong><small>indexed releases</small></article>
+  <article class="stat-cell"><span>TRACKS</span><strong>{{ stats.track_count }}</strong><small>audio files</small></article>
+  <article class="stat-cell"><span>AVG. MATCH</span><strong>{% if stats.average_quality != None %}{{ stats.average_quality|floatformat:2 }}{% else %}--{% endif %}</strong><small>path confidence</small></article>
+</section>
+<section class="dashboard-lower">
+  <div class="section-heading"><div><span class="eyebrow">RECENTLY INDEXED</span><h2>In the crates</h2></div><a class="quiet-link" href="{% url 'library:album-list' %}">All albums <span>↗</span></a></div>
+  {% if recent_albums %}<div class="album-grid compact-grid">
+    {% for album in recent_albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}">
+      <div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}<span class="cover-index">{{ forloop.counter|stringformat:"02d" }}</span></div>
+      <strong>{{ album.album_name }}</strong><span>{{ album.artist_name }}</span><small>{{ album.release_year|default:"YEAR UNKNOWN" }} · {{ album.track_count }} TRACKS</small>
+    </a>{% endfor %}
+  </div>{% else %}<div class="empty-state"><span class="empty-mark">∅</span><h3>No records indexed</h3><p>Choose a source folder and run a scan to begin.</p></div>{% endif %}
+</section>
+<section class="quality-strip">
+  <div><span class="eyebrow">CATALOG GAPS</span><strong>Metadata to revisit</strong></div>
+  <span><b>{{ stats.missing_artwork_count }}</b> missing covers</span><span><b>{{ stats.missing_year_count }}</b> missing years</span><span><b>{{ stats.missing_genre_count }}</b> missing genres</span>
+  <a class="quiet-link" href="{% url 'library:quality-report' %}">Open tag health <span>↗</span></a>
+</section>
+{% endblock %}

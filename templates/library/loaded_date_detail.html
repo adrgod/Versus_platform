@@ -1,0 +1,20 @@
+{% extends "library/base.html" %}
+{% block title %}Loaded {{ loaded_date|date:"j M Y" }}{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:browse' %}">Browse</a><span>/</span><a href="{% url 'library:loaded-date-index' %}">Loaded date</a><span>/</span>{{ loaded_date|date:"j M Y" }}</div>
+<section class="page-heading"><div><span class="eyebrow">LOADED DATE / COLLECTION</span><h1>{{ loaded_date|date:"j F Y" }}</h1><p class="subheading">{{ artists|length }} artists · {{ albums|length }} albums · {{ tracks|length }} tracks</p></div><a class="button button-light" href="{% url 'library:loaded-date-index' %}">All dates</a></section>
+
+<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">ARTIST INDEX</span><h2>Artists</h2></div></div>
+  <div class="genre-artist-list">{% for artist in artists %}<article class="genre-artist-row"><a href="{% url 'library:artist-detail' artist.artist_id %}"><strong>{{ artist.artist_name }}</strong><span>Artist details ↗</span></a>{% if artist.queue_tracks %}{{ artist.queue_tracks|json_script:artist.queue_id }}<button class="link-button" type="button" data-enqueue-playlist="{{ artist.queue_id }}">Queue artist</button>{% else %}<span class="muted">No playable files</span>{% endif %}</article>{% empty %}<p class="empty-note">No artists for this date.</p>{% endfor %}</div>
+</section>
+
+<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">RELEASE INDEX</span><h2>Albums</h2></div></div>
+  <div class="album-grid">{% for album in albums %}<article class="album-tile genre-album"><a href="{% url 'library:album-detail' album.album_id %}" class="genre-cover-link"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</div></a><a class="genre-album-copy" href="{% url 'library:album-detail' album.album_id %}"><strong>{{ album.album_name }}</strong><span>{{ album.artist_name }}</span><small>{{ album.release_year|default:"YEAR UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% if album.queue_tracks %}{{ album.queue_tracks|json_script:album.queue_id }}<button class="link-button queue-album-button" type="button" data-enqueue-playlist="{{ album.queue_id }}">Add album to queue</button>{% endif %}</article>{% empty %}<div class="empty-state"><h3>No albums loaded</h3></div>{% endfor %}</div>
+</section>
+
+<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">TRACK INDEX</span><h2>Tracks</h2></div></div>
+  <div class="table-wrap"><table class="data-table genre-track-table"><thead><tr><th>#</th><th>TRACK</th><th>ARTIST</th><th>ALBUM</th><th>TIME</th><th></th></tr></thead><tbody>
+  {% for track in tracks %}<tr><td>{{ track.track_number|default:"—" }}</td><td><strong class="table-primary">{{ track.track_name|default:"Untitled track" }}</strong></td><td><a href="{% url 'library:artist-detail' track.artist_id %}">{{ track.artist_name }}</a></td><td><a href="{% url 'library:album-detail' track.album_id %}">{{ track.album_name }}</a></td><td>{{ track.track_length|floatformat:0 }}s</td><td>{% if track.player_url %}<div class="row-actions"><button class="link-button" type="button" data-play-track="{{ track.player_url }}" data-track-title="{{ track.track_name }}" data-track-album="{{ track.album_name }}">Play</button><button class="link-button" type="button" data-queue-track="{{ track.player_url }}" data-track-title="{{ track.track_name }}" data-track-album="{{ track.album_name }}" data-track-artist="{{ track.artist_name }}">Add to queue</button></div>{% else %}<span class="muted">Refresh to link file</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">No tracks found.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

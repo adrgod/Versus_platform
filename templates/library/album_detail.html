@@ -1,0 +1,16 @@
+{% extends "library/base.html" %}
+{% block title %}{{ album.album_name }}{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:album-list' %}">Albums</a><span>/</span><a href="{% url 'library:artist-detail' album.artist_id %}">{{ album.artist_name }}</a><span>/</span>{{ album.album_name }}</div>
+<section class="album-detail-head">
+  <div class="detail-cover">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</div>
+  <div class="detail-copy"><span class="eyebrow">RELEASE / {{ album.disc_number|default:"1" }}</span><h1>{{ album.album_name }}</h1><a class="artist-link" href="{% url 'library:artist-detail' album.artist_id %}">{{ album.artist_name }}</a><div class="detail-meta"><span>{{ album.release_year|default:"YEAR UNKNOWN" }}</span><span>{{ album.genre|default:"GENRE UNKNOWN" }}</span><span>{{ tracks|length }} TRACKS</span></div>
+    {% if player_tracks %}<button class="button button-primary" type="button" data-playlist="album-playlist">Play album</button>{% endif %}
+  </div>
+</section>
+{{ player_tracks|json_script:"album-playlist" }}
+<section class="track-section"><div class="section-heading"><div><span class="eyebrow">SIDE A / SIDE B</span><h2>Track listing</h2></div></div>
+<div class="table-wrap"><table class="data-table track-table"><thead><tr><th>#</th><th>TRACK</th><th>TIME</th><th>MATCH</th><th></th></tr></thead><tbody>
+{% for track in tracks %}<tr><td class="track-number">{{ track.track_number|default:"—" }}</td><td><strong class="table-primary">{{ track.track_name }}</strong></td><td>{{ track.track_length|floatformat:0 }}s</td><td>{% if track.dq_confidence != None %}{{ track.dq_confidence|floatformat:2 }}{% else %}—{% endif %}</td><td><div class="row-actions">{% if track.file_path %}<button class="link-button" type="button" data-play-track="{% url 'library:stream-track' track.track_id %}" data-track-title="{{ track.track_name }}" data-track-album="{{ album.album_name }}">Play</button><a class="link-button" href="{% url 'library:edit-tags' track.track_id %}">Tags</a>{% else %}<span class="muted">Refresh to link file</span>{% endif %}</div></td></tr>{% empty %}<tr><td colspan="5" class="empty-cell">No tracks are linked to this album.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

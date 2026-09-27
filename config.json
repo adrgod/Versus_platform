@@ -3,5 +3,6 @@
     "file_attributes" : ["album", "length", "mood", "title", "artist", "albumartist", "discnumber", "tracknumber", "language", "genre", "date", "originaldate"],
     "quality_attributes" : ["album", "title", "artist", "tracknumber", "genre", "date"],
     "name_fields" : ["artist", "album", "albumartist", "title"],
-    "db_file_location": "./db/music_data.db"
+    "db_file_location": "./db/music_data.db",
+    "allowed_library_roots": ["/"]
 }

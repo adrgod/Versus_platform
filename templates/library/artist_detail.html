@@ -1,0 +1,9 @@
+{% extends "library/base.html" %}
+{% block title %}{{ artist.artist_name }}{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:artist-list' %}">Artists</a><span>/</span>{{ artist.artist_name }}</div>
+<section class="page-heading"><div><span class="eyebrow">ARTIST FILE</span><h1>{{ artist.artist_name }}</h1><p class="subheading">{{ albums|length }} albums in this library</p></div></section>
+<div class="album-grid">
+{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.release_year|default:"Year unknown" }}</span><small>{{ album.genre|default:"GENRE UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}
+</div>
+{% endblock %}

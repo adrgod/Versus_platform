@@ -13,8 +13,10 @@ def load_config():
         return json.load(config_file)
 
 config = load_config()
-source_folder = PROJECT_DIR / config["source_data_folder"]
-db_file_location = config["db_file_location"]
+configured_source = Path(config["source_data_folder"]).expanduser()
+source_folder = (configured_source if configured_source.is_absolute() else PROJECT_DIR / configured_source).resolve()
+configured_db = Path(config["db_file_location"]).expanduser()
+db_file_location = (configured_db if configured_db.is_absolute() else PROJECT_DIR / configured_db).resolve()
 
 
 def versus_start():

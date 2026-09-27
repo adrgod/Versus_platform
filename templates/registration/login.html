@@ -1,0 +1,23 @@
+{% extends "library/base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<section class="login-layout">
+  <div class="login-copy">
+    <span class="eyebrow">PERSONAL MUSIC INDEX</span>
+    <h1>Listen closer.<br><em>Keep the details.</em></h1>
+    <p>A private catalog for records, notes, and the music between them.</p>
+  </div>
+  <form class="login-form" method="post">
+    {% csrf_token %}
+    <span class="eyebrow">MEMBER ACCESS</span>
+    <h2>Sign in</h2>
+    {% if form.errors %}<div class="form-error">Username or password was not recognized.</div>{% endif %}
+    <label for="id_username">Username</label>
+    <input id="id_username" name="username" type="text" autocomplete="username" required autofocus>
+    <label for="id_password">Password</label>
+    <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="button button-primary full-width" type="submit">Enter archive</button>
+  </form>
+</section>
+{% endblock %}

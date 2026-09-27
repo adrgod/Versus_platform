@@ -1,0 +1,10 @@
+{% extends "library/base.html" %}
+{% block title %}Review tag changes{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:quality-report' %}">Tag health</a><span>/</span><a href="{% url 'library:edit-tags' track.track_id %}">Edit tags</a><span>/</span>Preview</div>
+<section class="page-heading"><div><span class="eyebrow">ID3 EDITOR / CONFIRM</span><h1>Review changes</h1><p class="subheading">{{ track.track_name }} · {{ track.artist_name }}</p></div></section>
+{% if changes %}<div class="table-wrap"><table class="data-table"><thead><tr><th>FIELD</th><th>BEFORE</th><th>AFTER</th></tr></thead><tbody>{% for change in changes %}<tr><td class="table-primary">{{ change.field|title }}</td><td class="before-value">{{ change.before|default:"(empty)" }}</td><td class="after-value">{{ change.after|default:"(empty)" }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="preview-warning"><strong>Backup before write</strong><span>The original MP3 will be copied into the local database backup folder before these tags are changed.</span></div>
+<div class="preview-actions"><a class="button button-light" href="{% url 'library:edit-tags' track.track_id %}">Go back</a><form method="post" action="{% url 'library:confirm-tag-edit' track.track_id %}">{% csrf_token %}<input type="hidden" name="preview_token" value="{{ preview_token }}"><button class="button button-primary" type="submit">Back up and save</button></form></div>
+{% else %}<div class="empty-state"><span class="complete-tag">No changes</span><h3>Tags already match</h3><p>No file will be written.</p><a class="button button-light" href="{% url 'library:edit-tags' track.track_id %}">Return to tags</a></div>{% endif %}
+{% endblock %}

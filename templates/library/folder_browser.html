@@ -1,0 +1,15 @@
+{% extends "library/base.html" %}
+{% block title %}Choose source folder{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">LIBRARY CONTROL / SOURCE</span><h1>Choose a folder</h1><p class="subheading">Select a directory on the host computer.</p></div><a class="button button-light" href="{% url 'library:dashboard' %}">Cancel</a></section>
+{% for error in messages_to_show %}<div class="message error">{{ error }}</div>{% endfor %}
+<section class="folder-browser">
+  <div class="folder-path"><span class="eyebrow">BROWSING</span><strong>{{ current|default:"No permitted folder is available" }}</strong></div>
+  <div class="folder-actions">
+    {% if parent %}<a class="folder-row folder-parent" href="?path={{ parent|urlencode }}"><span class="folder-symbol">↑</span><span>Parent folder</span><span class="row-end">UP</span></a>{% endif %}
+    {% for directory in directories %}<a class="folder-row" href="?path={{ directory|urlencode }}"><span class="folder-symbol">▱</span><span>{{ directory.name }}</span><span class="row-end">OPEN →</span></a>{% empty %}<p class="empty-note">No subfolders in this directory.</p>{% endfor %}
+  </div>
+  {% if current %}<form method="post" action="{% url 'library:choose-folder' %}" class="folder-select-form">{% csrf_token %}<input type="hidden" name="folder" value="{{ current }}"><span>Use this folder as the scan source?</span><button class="button button-primary" type="submit">Select this folder</button></form>{% endif %}
+</section>
+<p class="security-note">Browsing starts at the host Mac’s filesystem root. macOS privacy permissions still limit which folders this app can list.</p>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "library/base.html" %}
+{% block title %}Loaded date{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:browse' %}">Browse</a><span>/</span>Loaded date</div>
+<section class="page-heading"><div><span class="eyebrow">BROWSE / LOADED DATE</span><h1>Loaded date</h1><p class="subheading">{{ loaded_dates|length }} dates in the library history.</p></div></section>
+<section class="loaded-date-list">
+  <div class="loaded-date-header"><span>DATE</span><span>LIBRARY CONTENT</span><span></span></div>
+  {% for loaded in loaded_dates %}<a class="loaded-date-row" href="{% url 'library:loaded-date-detail' %}?day={{ loaded.loaded_date|urlencode }}"><time datetime="{{ loaded.loaded_date }}">{{ loaded.day|date:"j M Y" }}</time><span>{{ loaded.artist_count }} ARTIST{{ loaded.artist_count|pluralize }} <i>/</i> {{ loaded.album_count }} ALBUM{{ loaded.album_count|pluralize }} <i>/</i> {{ loaded.track_count }} TRACK{{ loaded.track_count|pluralize }}</span><b>↗</b></a>{% empty %}<div class="empty-state"><h3>No load dates yet</h3><p>Run a library refresh to create the first record.</p></div>{% endfor %}
+</section>
+{% endblock %}

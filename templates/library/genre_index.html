@@ -1,0 +1,12 @@
+{% extends "library/base.html" %}
+{% block title %}Music genre{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:browse' %}">Browse</a><span>/</span>Music genre</div>
+<section class="page-heading"><div><span class="eyebrow">BROWSE / MUSIC GENRE</span><h1>Music genre</h1><p class="subheading">{{ genres|length }} genres in the library.</p></div>
+  <form class="search-form" method="get"><input type="search" name="q" value="{{ search }}" placeholder="Find a genre" aria-label="Find a genre"><button class="button button-dark" type="submit">Search</button></form>
+</section>
+<section class="browse-genres">
+  <div class="section-heading"><div><span class="eyebrow">GENRE INDEX</span><h2>Explore by sound</h2></div><span class="genre-total">{{ genres|length }} GENRES</span></div>
+  <div class="genre-grid">{% for genre in genres %}<a class="genre-tile" href="{% url 'library:genre-detail' %}?name={{ genre.name|urlencode }}"><span class="genre-marker">{{ forloop.counter|stringformat:"02d" }}</span><strong>{{ genre.name }}</strong><span class="genre-counts">{{ genre.artist_count }} ARTIST{{ genre.artist_count|pluralize }} <i>/</i> {{ genre.album_count }} ALBUM{{ genre.album_count|pluralize }} <i>/</i> {{ genre.track_count }} TRACK{{ genre.track_count|pluralize }}</span><b>↗</b></a>{% empty %}<div class="empty-state"><h3>No genres found</h3><p>Try another search or refresh the library.</p></div>{% endfor %}</div>
+</section>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "library/base.html" %}
+{% block title %}Edit ID3 tags{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:quality-report' %}">Tag health</a><span>/</span>Edit tags</div>
+<section class="page-heading"><div><span class="eyebrow">ID3 EDITOR / TRACK {{ track.track_id }}</span><h1>{{ track.track_name|default:"Untitled track" }}</h1><p class="subheading">{{ track.artist_name }} · {{ track.album_name }}</p></div><a class="button button-light" href="{% url 'library:quality-report' %}">Cancel</a></section>
+<section class="editor-layout">
+  <form class="tag-form" method="post">{% csrf_token %}
+    {% for field in form %}<div class="field-row"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<span class="field-error">{{ field.errors|join:", " }}</span>{% endif %}</div>{% endfor %}
+    <div class="editor-footer"><span class="security-note">Changes are previewed before writing. A backup is created first.</span><button class="button button-primary" type="submit">Review changes</button></div>
+  </form>
+  <aside class="editor-aside"><span class="eyebrow">SOURCE FILE</span><code>{{ track.file_path }}</code><span class="eyebrow">QUALITY MATCH</span><strong>{{ track.dq_confidence|floatformat:2|default:"Not scored" }}</strong></aside>
+</section>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "library/base.html" %}
+{% block title %}Artists{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">CATALOG / INDEX</span><h1>Artists</h1><p class="subheading">{{ artists|length }} matching names</p></div>
+  <form class="search-form" method="get"><input type="search" name="q" value="{{ search }}" placeholder="Find an artist" aria-label="Find an artist"><button class="button button-dark" type="submit">Search</button></form>
+</section>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>ARTIST</th><th>ALBUMS</th><th>TRACKS</th><th></th></tr></thead><tbody>
+{% for artist in artists %}<tr><td><a class="table-primary" href="{% url 'library:artist-detail' artist.artist_id %}">{{ artist.artist_name|default:"Unknown artist" }}</a></td><td>{{ artist.album_count }}</td><td>{{ artist.track_count }}</td><td class="row-arrow">↗</td></tr>{% empty %}<tr><td colspan="4" class="empty-cell">No matching artists.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

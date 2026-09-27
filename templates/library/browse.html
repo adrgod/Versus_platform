@@ -1,0 +1,19 @@
+{% extends "library/base.html" %}
+{% load static %}
+{% block title %}Browse{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">CATALOG / INDEX</span><h1>Browse</h1><p class="subheading">Choose a field.</p></div>
+</section>
+<section class="data-element-layout">
+  <div class="data-cloud-stage" data-data-cloud aria-label="Browse data elements">
+    <div class="data-cloud-labels">
+      {% for element in data_elements %}<a class="data-cloud-tag data-cloud-tag-{{ element.kind }}" href="{{ element.url }}" data-cloud-tag>
+        <span class="data-cloud-index">0{{ forloop.counter }}</span><strong>{{ element.name }}</strong><span class="data-cloud-arrow">↗</span>
+      </a>{% endfor %}
+    </div>
+  </div>
+  <nav class="data-element-fallback" aria-label="Browse data elements">
+    {% for element in data_elements %}<a href="{{ element.url }}"><span>0{{ forloop.counter }}</span><strong>{{ element.name }}</strong><b>↗</b></a>{% endfor %}
+  </nav>
+</section>
+{% endblock %}

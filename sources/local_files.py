@@ -83,9 +83,9 @@ def calculate_confidence_for_track(track, file_path):
 
 
 
-def add_track_tag_data_quality_confidence(records, mp3_files):
-    for track, file_path in zip(records, mp3_files):
-        track['dq_confidence'] = calculate_confidence_for_track(track, file_path)
+def add_track_tag_data_quality_confidence(records, mp3_files=None):
+    for track in records:
+        track['dq_confidence'] = calculate_confidence_for_track(track, track["file_path"])
 
     return records
 
@@ -103,7 +103,7 @@ def check_empty_fields(records, quality_attributes):
     return tracks_with_missing_tags
 
 
-def read_all_metadata(source_folder, config):
+def read_all_metadata(source_folder, config, errors=None):
 
     quality_attributes = config["quality_attributes"]
 
@@ -131,6 +131,8 @@ def read_all_metadata(source_folder, config):
             records.append(record)
         except Exception as error:
             print(f"Could not read {file_path}: {error}")
+            if errors is not None:
+                errors.append(f"{file_path}: {error}")
             continue
 
     records_with_tags = add_track_tag_data_quality_confidence(records, mp3_files)

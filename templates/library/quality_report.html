@@ -1,0 +1,10 @@
+{% extends "library/base.html" %}
+{% block title %}Tag health{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA QUALITY</span><h1>Tag health</h1><p class="subheading">{{ incomplete_count }} incomplete tracks in this result · {{ average_score }}% average completeness</p></div>
+  <form class="search-form" method="get"><input type="search" name="q" value="{{ search }}" placeholder="Track, album or artist" aria-label="Search tag report"><button class="button button-dark" type="submit">Search</button></form>
+</section>
+<div class="table-wrap"><table class="data-table quality-table"><thead><tr><th>TRACK / RELEASE</th><th>COMPLETENESS</th><th>MISSING TAGS</th><th>PATH MATCH</th><th></th></tr></thead><tbody>
+{% for track in tracks %}<tr><td><strong class="table-primary">{{ track.track_name|default:"Untitled track" }}</strong><span class="table-secondary">{{ track.artist_name }} · {{ track.album_name }}</span></td><td><div class="quality-meter"><i style="width: {{ track.quality_percent }}%"></i></div><small>{{ track.quality_percent }}%</small></td><td>{% if track.missing_fields %}<span class="missing-tags">{{ track.missing_fields|join:", " }}</span>{% else %}<span class="complete-tag">Complete</span>{% endif %}</td><td>{% if track.dq_confidence != None %}{{ track.dq_confidence|floatformat:2 }}{% else %}—{% endif %}</td><td><a class="link-button" href="{% url 'library:edit-tags' track.track_id %}">Review tags</a></td></tr>{% empty %}<tr><td colspan="5" class="empty-cell">No tracks in this result.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
