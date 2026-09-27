@@ -4,7 +4,6 @@ from db import db_operations
 from sources import local_files
 from pathlib import Path
 
-import sqlite3
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
@@ -25,7 +24,6 @@ def versus_start():
     
     #Call all DB actions
     db_operations.load_db_data(db_file_location, data)
-    
     
 
 if __name__ == '__main__':
