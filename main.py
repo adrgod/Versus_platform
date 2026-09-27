@@ -11,13 +11,6 @@ from mutagen.id3 import ID3, ID3NoHeaderError
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
-file_attributes = [
-    'album', 'length', 'mood', 'title', 'artist', 'albumartist', 'discnumber', 'tracknumber', 'language', 'genre', 'date', 'originaldate'
-    ]
-
-quality_attributes = [
-    'album', 'title', 'artist', 'tracknumber', 'genre', 'date'
-    ]
 
 def load_config():
     config_path = PROJECT_DIR / "config.json"
@@ -25,12 +18,16 @@ def load_config():
         return json.load(config_file)
 
 
+# Loading variables from configuration
+
 config = load_config()
 source_folder = PROJECT_DIR / config["source_data_folder"]
 
+file_attributes = config["file_attributes"]
 
+quality_attributes = config["quality_attributes"]
 
-NAME_FIELDS = {"artist", "album", "albumartist", "title"}
+name_fields = config["name_fields"]
 
 def format_name(name):
     if not name:
@@ -53,7 +50,7 @@ def read_metadata(file_path):
         else:
             file_data[att] = "" if value is None else str(value)
 
-        if att in NAME_FIELDS:
+        if att in name_fields:
             file_data[att] = format_name(file_data[att])
 
         if att == "title":
