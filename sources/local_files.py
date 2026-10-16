@@ -15,9 +15,12 @@ def format_name(name):
     return " ".join(name.split()).title()
 
 def clean_track_name(trackname):
-    return re.sub(r"^\s*\d+\s*[-\u2013\u2014]\s*", "", trackname)
+    return re.sub(r"^\s*\d+\s*\s*", "", trackname)
 
-
+def clean_tracknumber(tracknumber):
+    match = re.match(r"^\s*(\d+)", tracknumber)
+    return match.group(1) if match else ""
+    
 
 def read_metadata(file_path, config):
     file_info = EasyID3(file_path)
@@ -41,11 +44,14 @@ def read_metadata(file_path, config):
         if att == "title":
             file_data[att] = clean_track_name(file_data[att])
 
+        if att == "tracknumber":
+            file_data[att] = clean_tracknumber(file_data[att])
+
     return file_data
 
 
 
-def read_artwork(file_path):
+def read_artwork_from_id3(file_path):
     
     try:
         tags = ID3(file_path)
@@ -92,13 +98,20 @@ def add_track_tag_data_quality_confidence(records, mp3_files=None):
 
 def check_empty_fields(records, quality_attributes):
 
-    tracks_with_missing_tags = []
+    tracks_with_missing_tags = dict()
     
     for record in records:
         for tag, value in record.items():
             if tag in quality_attributes and not value:
-                tracks_with_missing_tags.append(record["artist"])
-                print(f"tag: {tag}; value: {value}")
+                
+                tag_key = (
+                    record["artist"],
+                    record["album"],
+                    record["title"],
+                    record["tracknumber"]
+                )
+                
+                tracks_with_missing_tags[tag_key] = tag
 
     return tracks_with_missing_tags
 
@@ -126,7 +139,7 @@ def read_all_metadata(source_folder, config, errors=None):
                 record["date"],
             )
             if album_key not in album_cover_cache:
-                album_cover_cache[album_key] = read_artwork(file_path)
+                album_cover_cache[album_key] = read_artwork_from_id3(file_path)
             record["album_cover"] = album_cover_cache[album_key]
             records.append(record)
         except Exception as error:
@@ -138,6 +151,8 @@ def read_all_metadata(source_folder, config, errors=None):
     records_with_tags = add_track_tag_data_quality_confidence(records, mp3_files)
 
     tracks_with_empty_fields = check_empty_fields(records, quality_attributes)
+    
+    print("Report with empty fields:")
     print(tracks_with_empty_fields)
 
     return records_with_tags
