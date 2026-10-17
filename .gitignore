@@ -6,3 +6,5 @@ music_data.db
 db.sqlite3
 db/metadata_backups/
 .venv
+/source-test/*
+.DS_Store

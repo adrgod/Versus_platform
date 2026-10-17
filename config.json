@@ -1,5 +1,5 @@
 {
-    "source_data_folder": "/Users/AGN/Downloads/Earsplit",
+    "source_data_folder": "source-test",
     "file_attributes" : ["album", "length", "mood", "title", "artist", "albumartist", "discnumber", "tracknumber", "language", "genre", "date", "originaldate"],
     "quality_attributes" : ["album", "title", "artist", "tracknumber", "genre", "date"],
     "name_fields" : ["artist", "album", "albumartist", "title"],
