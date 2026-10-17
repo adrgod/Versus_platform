@@ -7,6 +7,9 @@ from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, ID3NoHeaderError
 
+from io import BytesIO
+from PIL import Image, ImageOps
+
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -15,24 +18,64 @@ def format_name(name):
         return ""
     return " ".join(name.split()).title()
 
+
+
 def clean_track_name(trackname):
     return re.sub(r"^\s*\d+\s*\s*", "", trackname)
+
+
 
 def clean_tracknumber(tracknumber):
     match = re.match(r"^\s*(\d+)", tracknumber)
     return match.group(1) if match else ""
+
+
+
+def read_artwork_from_id3(file_path):
+
+    try:
+        tags = ID3(file_path)
+    except (ID3NoHeaderError, OSError):
+        return None
+
+    pictures = tags.getall("APIC")
+    if not pictures:
+        return None
     
+    cover = next((picture for picture in pictures if picture.type == 3), pictures[0])
+
+    image = Image.open(BytesIO(cover.data))
+    image = ImageOps.exif_transpose(image)
+    image.thumbnail((600,600), Image.Resampling.LANCZOS)
+
+    output = BytesIO()
+    image.convert("RGB").save(
+        output,
+        format="JPEG",
+        quality=85,
+        optimize=True,
+    )
+
+    return output.getvalue()
+
+
 
 def read_file_metadata(file_path, config):
     file_info = EasyID3(file_path)
     audio_info = MP3(file_path).info
-    file_data = {"file_path": str(file_path)}
+    file_data: dict[str, str | bytes | None] = {
+        "file_path": str(file_path)
+    }
 
     file_attributes = config["file_attributes"]
-
     name_fields = config["name_fields"]
 
     for att in file_attributes:
+
+        if att == "album_cover":
+            file_data[att] = read_artwork_from_id3(file_path)
+            continue
+        
         value = round(audio_info.length, 2) if att == "length" else file_info.get(att)
         if isinstance(value, list):
             file_data[att] = ", ".join(str(item) for item in value)
@@ -48,24 +91,7 @@ def read_file_metadata(file_path, config):
         if att == "tracknumber":
             file_data[att] = clean_tracknumber(file_data[att])
 
-
     return file_data
-
-
-
-def read_artwork_from_id3(file_path):
-    
-    try:
-        tags = ID3(file_path)
-    except (ID3NoHeaderError, OSError):
-        return None
-
-    pictures = tags.getall("APIC")
-    if not pictures:
-        return None
-    
-    cover = next((picture for picture in pictures if picture.type == 3), pictures[0])
-    return cover.data
 
 
 def normalize_for_path_match(value):
@@ -112,10 +138,10 @@ def check_empty_fields(tracks, quality_attributes):
                     track["title"],
                     track["tracknumber"]
                 )
-                
                 tracks_with_missing_tags[tag_key] = tag
-
+                
     return tracks_with_missing_tags
+
 
 
 def standardize_release_year(tracks):
@@ -140,6 +166,7 @@ def standardize_release_year(tracks):
     #print("Standard release dates by artist and album:", standard_dates)
     return tracks
 
+
 def read_all_metadata(source_folder, config, errors=None):
 
     quality_attributes = config["quality_attributes"]
@@ -151,20 +178,10 @@ def read_all_metadata(source_folder, config, errors=None):
         )
     
     tracks = []
-    album_cover_cache = {}
 
     for file_path in mp3_files:
         try:
             track = read_file_metadata(file_path, config)
-            album_key = (
-                track["artist"],
-                track["album"],
-                track["discnumber"] or 1,
-                track["date"],
-            )
-            if album_key not in album_cover_cache:
-                album_cover_cache[album_key] = read_artwork_from_id3(file_path)
-            track["album_cover"] = album_cover_cache[album_key]
             tracks.append(track)
         except Exception as error:
             print(f"Could not read {file_path}: {error}")
