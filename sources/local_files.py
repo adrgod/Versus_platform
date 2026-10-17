@@ -1,5 +1,6 @@
 
 import re
+from collections import Counter
 from pathlib import Path
 
 from mutagen.easyid3 import EasyID3
@@ -46,6 +47,7 @@ def read_metadata(file_path, config):
 
         if att == "tracknumber":
             file_data[att] = clean_tracknumber(file_data[att])
+
 
     return file_data
 
@@ -116,6 +118,28 @@ def check_empty_fields(records, quality_attributes):
     return tracks_with_missing_tags
 
 
+def standardize_release_year(records):
+
+    dates_by_album = {}
+    for record in records:
+        album_key = (record["artist"], record["album"])
+        date = record["date"].strip()
+        if date:
+            dates_by_album.setdefault(album_key, []).append(date)
+
+    standard_dates = {
+        album_key: Counter(dates).most_common(1)[0][0]
+        for album_key, dates in dates_by_album.items()
+    }
+    
+    for record in records:
+        album_key = (record["artist"], record["album"])
+        if album_key in standard_dates:
+            record["date"] = standard_dates[album_key]
+
+    print("Standard release dates by artist and album:", standard_dates)
+    return records
+
 def read_all_metadata(source_folder, config, errors=None):
 
     quality_attributes = config["quality_attributes"]
@@ -151,6 +175,8 @@ def read_all_metadata(source_folder, config, errors=None):
     records_with_tags = add_track_tag_data_quality_confidence(records, mp3_files)
 
     tracks_with_empty_fields = check_empty_fields(records, quality_attributes)
+
+    standardize_release_year(records)
     
     print("Report with empty fields:")
     print(tracks_with_empty_fields)
