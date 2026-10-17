@@ -23,7 +23,7 @@ def clean_tracknumber(tracknumber):
     return match.group(1) if match else ""
     
 
-def read_metadata(file_path, config):
+def read_file_metadata(file_path, config):
     file_info = EasyID3(file_path)
     audio_info = MP3(file_path).info
     file_data = {"file_path": str(file_path)}
@@ -91,26 +91,26 @@ def calculate_confidence_for_track(track, file_path):
 
 
 
-def add_track_tag_data_quality_confidence(records, mp3_files=None):
-    for track in records:
+def add_track_tag_data_quality_confidence(tracks, mp3_files=None):
+    for track in tracks:
         track['dq_confidence'] = calculate_confidence_for_track(track, track["file_path"])
 
-    return records
+    return tracks
 
 
-def check_empty_fields(records, quality_attributes):
+def check_empty_fields(tracks, quality_attributes):
 
     tracks_with_missing_tags = dict()
     
-    for record in records:
-        for tag, value in record.items():
+    for track in tracks:
+        for tag, value in track.items():
             if tag in quality_attributes and not value:
                 
                 tag_key = (
-                    record["artist"],
-                    record["album"],
-                    record["title"],
-                    record["tracknumber"]
+                    track["artist"],
+                    track["album"],
+                    track["title"],
+                    track["tracknumber"]
                 )
                 
                 tracks_with_missing_tags[tag_key] = tag
@@ -118,12 +118,12 @@ def check_empty_fields(records, quality_attributes):
     return tracks_with_missing_tags
 
 
-def standardize_release_year(records):
+def standardize_release_year(tracks):
 
     dates_by_album = {}
-    for record in records:
-        album_key = (record["artist"], record["album"])
-        date = record["date"].strip()
+    for track in tracks:
+        album_key = (track["artist"], track["album"])
+        date = track["date"].strip()
         if date:
             dates_by_album.setdefault(album_key, []).append(date)
 
@@ -132,13 +132,13 @@ def standardize_release_year(records):
         for album_key, dates in dates_by_album.items()
     }
     
-    for record in records:
-        album_key = (record["artist"], record["album"])
+    for track in tracks:
+        album_key = (track["artist"], track["album"])
         if album_key in standard_dates:
-            record["date"] = standard_dates[album_key]
+            track["date"] = standard_dates[album_key]
 
-    print("Standard release dates by artist and album:", standard_dates)
-    return records
+    #print("Standard release dates by artist and album:", standard_dates)
+    return tracks
 
 def read_all_metadata(source_folder, config, errors=None):
 
@@ -150,35 +150,35 @@ def read_all_metadata(source_folder, config, errors=None):
             if file_path.is_file() and file_path.suffix.lower() == ".mp3"
         )
     
-    records = []
+    tracks = []
     album_cover_cache = {}
 
     for file_path in mp3_files:
         try:
-            record = read_metadata(file_path, config)
+            track = read_file_metadata(file_path, config)
             album_key = (
-                record["artist"],
-                record["album"],
-                record["discnumber"] or 1,
-                record["date"],
+                track["artist"],
+                track["album"],
+                track["discnumber"] or 1,
+                track["date"],
             )
             if album_key not in album_cover_cache:
                 album_cover_cache[album_key] = read_artwork_from_id3(file_path)
-            record["album_cover"] = album_cover_cache[album_key]
-            records.append(record)
+            track["album_cover"] = album_cover_cache[album_key]
+            tracks.append(track)
         except Exception as error:
             print(f"Could not read {file_path}: {error}")
             if errors is not None:
                 errors.append(f"{file_path}: {error}")
             continue
 
-    records_with_tags = add_track_tag_data_quality_confidence(records, mp3_files)
+    tracks_with_tags = add_track_tag_data_quality_confidence(tracks, mp3_files)
 
-    tracks_with_empty_fields = check_empty_fields(records, quality_attributes)
+    tracks_with_empty_fields = check_empty_fields(tracks_with_tags, quality_attributes)
 
-    standardize_release_year(records)
+    standardize_release_year(tracks)
     
     print("Report with empty fields:")
     print(tracks_with_empty_fields)
 
-    return records_with_tags
+    return tracks_with_tags
