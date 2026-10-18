@@ -5,9 +5,9 @@ def db_create_schema(con):
 
     cur = con.cursor()
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE, when_loaded DATETIME)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_artist(artist_id INTEGER PRIMARY KEY, artist_name TEXT UNIQUE, artist_country TEXT, artist_formed_year INTEGER, artist_photo BLOB, when_loaded DATETIME)")
 
-    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre, album_cover BLOB, band_photo BLOB, when_loaded DATETIME)")
+    cur.execute("CREATE TABLE IF NOT EXISTS tbl_album(album_id INTEGER PRIMARY KEY, artist_id, album_name, disc_number DEFAULT 1, release_year, genre, album_cover BLOB, album_length_class TEXT, publisher TEXT, when_loaded DATETIME)")
 
     #An album can have the same name for different artists. An artist can have two albums with same name, but an album shouldn't have the same name, artist, year and disc number. makes sense?
     cur.execute("""
@@ -46,14 +46,19 @@ def db_load_data(con, records):
     cur = con.cursor()
 
     artists_data = [
-        {"artist": record["artist"]}
+        {
+            "artist": record["artist"],
+            "artist_country": record["artist_country"], 
+            "artist_formed_year": record["artist_formed_year"], 
+            "artist_photo": record["artist_photo"]
+         }
         for record in records
     ]
 
 
     cur.executemany(
-        """INSERT OR IGNORE INTO tbl_artist (artist_name, when_loaded)
-        VALUES (:artist, CURRENT_TIMESTAMP)
+        """INSERT OR IGNORE INTO tbl_artist (artist_name, artist_country, artist_formed_year, artist_photo, when_loaded)
+        VALUES (:artist, :artist_country, :artist_formed_year, :artist_photo, CURRENT_TIMESTAMP)
         """,
         artists_data,
     )
@@ -76,14 +81,17 @@ def db_load_data(con, records):
             "date": record["date"],
             "genre": record["genre"],
             "album_cover": record["album_cover"],
+            "publisher": record["publisher"],
+            "album_length_class": record["album_length_class"]
         })
 
     cur.executemany(
         """
         INSERT INTO tbl_album 
-        (artist_id, album_name, disc_number, release_year, genre, album_cover, when_loaded)
+        (artist_id, album_name, disc_number, release_year, genre, album_cover, publisher, album_length_class, when_loaded)
         VALUES
-            (:artist_id, :album, :discnumber, :date, :genre, :album_cover, CURRENT_TIMESTAMP)
+            (:artist_id, :album, :discnumber, :date, :genre, :album_cover, :publisher, clear
+            :album_length_class, CURRENT_TIMESTAMP)
         ON CONFLICT (artist_id, album_name, disc_number, release_year)
         DO UPDATE SET
             genre = excluded.genre,

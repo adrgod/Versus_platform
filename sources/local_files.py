@@ -10,6 +10,8 @@ from mutagen.id3 import ID3, ID3NoHeaderError
 from io import BytesIO
 from PIL import Image, ImageOps
 
+import pandas as pd
+
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -19,16 +21,13 @@ def format_name(name):
     return " ".join(name.split()).title()
 
 
-
 def clean_track_name(trackname):
     return re.sub(r"^\s*\d+\s*\s*", "", trackname)
-
 
 
 def clean_tracknumber(tracknumber):
     match = re.match(r"^\s*(\d+)", tracknumber)
     return match.group(1) if match else ""
-
 
 
 def read_artwork_from_id3(file_path):
@@ -57,7 +56,6 @@ def read_artwork_from_id3(file_path):
     )
 
     return output.getvalue()
-
 
 
 def read_file_metadata(file_path, config):
@@ -143,7 +141,6 @@ def check_empty_fields(tracks, quality_attributes):
     return tracks_with_missing_tags
 
 
-
 def standardize_release_year(tracks):
 
     dates_by_album = {}
@@ -165,6 +162,24 @@ def standardize_release_year(tracks):
 
     #print("Standard release dates by artist and album:", standard_dates)
     return tracks
+
+
+def classify_release_length(tracks):
+
+    df = pd.DataFrame(tracks)
+
+    df["length"] = pd.to_numeric(df["length"], errors="coerce").fillna(0)
+
+    album_fields = ["artist", "album", "discnumber", "date"]
+    df["album_length"] = df.groupby(album_fields)["length"].transform("sum")
+
+    df["album_length_class"] = (
+        df["album_length"]
+        .ge(1800)
+        .map({True: "LP", False: "EP"})
+    )
+
+    return df.to_dict(orient="records")
 
 
 def read_all_metadata(source_folder, config, errors=None):
@@ -197,5 +212,7 @@ def read_all_metadata(source_folder, config, errors=None):
     
     print("Report with empty fields:")
     print(tracks_with_empty_fields)
+
+    tracks_with_tags = classify_release_length(tracks_with_tags)
 
     return tracks_with_tags
