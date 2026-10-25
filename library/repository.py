@@ -32,7 +32,7 @@ def connect():
 
 
 def ensure_schema(connection=None):
-    from db.db_operations import db_create_schema
+    from library.services.db_importer import db_create_schema
 
     owned_connection = connection is None
     connection = connection or connect()

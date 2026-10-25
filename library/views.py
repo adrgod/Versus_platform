@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from datetime import date
+from typing import cast
 
 from django import forms
 from django.contrib import messages
@@ -16,12 +17,16 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from mutagen.easyid3 import EasyID3
 
-from db import db_operations
-from sources import local_files
-
 from . import repository
 from .scan_service import start_scan
 
+from .services.files_scanner import (
+    calculate_confidence_for_track,
+    read_artwork_from_id3,
+    read_file_metadata,
+)
+
+from .services.db_importer import db_create_schema, db_load_data
 
 @login_required
 def dashboard(request):
@@ -630,7 +635,7 @@ def _tag_fields():
 
 def _easyid3_values(file_path, fields):
 	tags = EasyID3(file_path)
-	return {field: ", ".join(tags.get(field, [])) for field in fields}
+	return {field: ", ".join(tags.get(field) or []) for field in fields}
 
 
 def _tag_form(fields, *, data=None, initial=None):
@@ -751,14 +756,15 @@ def confirm_tag_edit(request, track_id):
 
 		with (repository.PROJECT_ROOT / "config.json").open(encoding="utf-8") as config_file:
 			config = json.load(config_file)
-		record = local_files.read_metadata(path, config)
-		record["album_cover"] = local_files.read_artwork(path)
-		record["dq_confidence"] = local_files.calculate_confidence_for_track(record, record["file_path"])
+
+		record = read_file_metadata(path, config)
+		record["album_cover"] = read_artwork_from_id3(path)
+		cast(dict[str, object], record)["dq_confidence"] = calculate_confidence_for_track(record, record["file_path"])
 
 		connection.execute("BEGIN IMMEDIATE")
 		connection.execute("DELETE FROM tbl_track WHERE track_id = ?", (track_id,))
-		db_operations.db_create_schema(connection)
-		db_operations.db_load_data(connection, [record])
+		db_create_schema(connection)
+		db_load_data(connection, [record])
 		if old is not None:
 			connection.execute(
 				"DELETE FROM tbl_album WHERE album_id = ? AND NOT EXISTS (SELECT 1 FROM tbl_track WHERE album_id = ?)",

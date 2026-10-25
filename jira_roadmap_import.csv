@@ -1,0 +1,104 @@
+Issue Type,Summary,Description,Labels
+Task,"Phase 01: Create the project Git repository","Set up version control for the music library project.",phase-01-scanner
+Task,"Phase 01: Set up the Python environment","Create and document a Python virtual environment for the project.",phase-01-scanner
+Task,"Phase 01: Recursively scan the music library","Scan the main music folder and its YYYYMMDD subfolders for MP3 files.",phase-01-scanner
+Task,"Phase 01: Read MP3 metadata with Mutagen","Read metadata using Mutagen EasyID3. Capture artist, album, track title, track number, year, genre, album artist, label when available, and embedded artwork.",phase-01-scanner
+Task,"Phase 01: Store scanned paths and metadata","Store each source file path together with its extracted metadata.",phase-01-scanner
+Task,"Phase 01: Identify incomplete metadata","Detect missing or incomplete tags in scanned files.",phase-01-scanner
+Task,"Phase 01: Report files with missing metadata","Produce a report identifying files whose metadata is missing or incomplete.",phase-01-scanner
+Task,"Phase 01: Keep scanning read-only initially","Ensure the initial scanner never modifies music files automatically.",phase-01-scanner
+Task,"Phase 02: Use SQLite for the initial music database","Set up SQLite as the initial persistence layer for the scanned music library.",phase-02-database
+Task,"Phase 02: Import the scanned music library","Load scanned file metadata into the SQLite database.",phase-02-database
+Task,"Phase 02: Model albums and releases","Represent albums as works/releases rather than treating every track as a separate album; support LPs and EPs.",phase-02-database
+Task,"Phase 02: Link albums to artists","Create and maintain album-to-artist relationships.",phase-02-database
+Task,"Phase 02: Link albums to labels and genres","Create and maintain album relationships to record labels and genres.",phase-02-database
+Task,"Phase 02: Link albums to tracks","Create and maintain album track listings and their relationships.",phase-02-database
+Task,"Phase 02: Preserve original file paths","Keep the original path for each imported music file.",phase-02-database
+Task,"Phase 02: Record metadata scan and enrichment dates","Record when metadata was last scanned or enriched.",phase-02-database
+Task,"Phase 02: Make imports repeatable","Make repeated imports safe and avoid creating duplicate data.",phase-02-database
+Task,"Phase 03: Define required metadata fields","Decide which metadata fields are mandatory for library records.",phase-03-metadata-cleanup
+Task,"Phase 03: Detect duplicate albums and tracks","Identify duplicate album and track records.",phase-03-metadata-cleanup
+Task,"Phase 03: Detect inconsistent artist and album names","Identify inconsistent naming for artists and albums.",phase-03-metadata-cleanup
+Task,"Phase 03: Find albums missing artwork","Identify albums that do not have artwork.",phase-03-metadata-cleanup
+Task,"Phase 03: Find albums missing year, genre, or label","Identify albums missing a release year, genre, or label.",phase-03-metadata-cleanup
+Task,"Phase 03: Generate metadata cleanup reports","Generate reports of metadata issues before making any changes.",phase-03-metadata-cleanup
+Task,"Phase 03: Add optional automatic tag fixing","Eventually support optional automatic tag fixing; keep it disabled unless explicitly requested.",phase-03-metadata-cleanup
+Task,"Phase 04: Investigate MusicBrainz","Evaluate MusicBrainz as a source of structured music metadata.",phase-04-enrichment
+Task,"Phase 04: Investigate Discogs and other data sources","Evaluate Discogs and other useful sources for music metadata enrichment.",phase-04-enrichment
+Task,"Phase 04: Match albums and artists despite spelling differences","Match external records to library albums and artists when names differ in spelling or formatting.",phase-04-enrichment
+Task,"Phase 04: Enrich missing music metadata","Enrich missing release date or year, country, label, genre or style, artist information, band members, instruments, lineup changes, and related releases.",phase-04-enrichment
+Task,"Phase 04: Track metadata provenance","Record the source of each enriched piece of information.",phase-04-enrichment
+Task,"Phase 04: Record enrichment confidence","Record match and confidence information for enrichment results.",phase-04-enrichment
+Task,"Phase 04: Protect existing metadata during enrichment","Do not blindly overwrite existing information; make enrichment optional and repeatable.",phase-04-enrichment
+Task,"Phase 05: Collect magazine PDFs","Collect and organize the previous magazine PDFs.",phase-05-magazine-archive
+Task,"Phase 05: Process magazines issue by issue","Process the magazine archive one issue at a time.",phase-05-magazine-archive
+Task,"Phase 05: Extract text from magazine PDFs","Extract text from text-based PDF pages.",phase-05-magazine-archive
+Task,"Phase 05: OCR scanned magazine pages","Use OCR for scanned or image-only pages.",phase-05-magazine-archive
+Task,"Phase 05: Preserve extracted source text","Keep the original extracted text for reference and reprocessing.",phase-05-magazine-archive
+Task,"Phase 05: Identify and classify magazine articles","Identify articles and classify them as album reviews, interviews, news, or other.",phase-05-magazine-archive
+Task,"Phase 05: Store issue and page references","Store magazine issue date or number and page information.",phase-05-magazine-archive
+Task,"Phase 06: Detect album reviews","Detect individual album reviews in the processed magazine content.",phase-06-review-extraction
+Task,"Phase 06: Extract review details","Extract artist, album, reviewer, rating, review text, issue, and publication date from each review.",phase-06-review-extraction
+Task,"Phase 06: Link reviews to music library records","Link extracted reviews to matching albums, artists, genres, and labels in the music database.",phase-06-review-extraction
+Task,"Phase 06: Identify unresolved review matches","Identify reviews that could not be matched automatically.",phase-06-review-extraction
+Task,"Phase 06: Support manual review matching","Provide a way to manually correct review-to-library matches.",phase-06-review-extraction
+Task,"Phase 07: Analyze review text with an LLM","Use an LLM to analyze extracted review text.",phase-07-review-analysis
+Task,"Phase 07: Extract review keywords and themes","Extract keywords and themes from reviews.",phase-07-review-analysis
+Task,"Phase 07: Identify musical characteristics and descriptions","Identify musical characteristics and recurring descriptions in reviews.",phase-07-review-analysis
+Task,"Phase 07: Analyze review sentiment and opinion","Analyze the sentiment or opinion expressed in review text.",phase-07-review-analysis
+Task,"Phase 07: Preserve review text alongside analysis","Keep the original review text with all AI-generated analysis.",phase-07-review-analysis
+Task,"Phase 07: Make review analysis reproducible","Make AI analysis reproducible and safe to rerun.",phase-07-review-analysis
+Task,"Phase 07: Support flexible AI analysis fields","Avoid restricting the database to only predefined AI analysis fields.",phase-07-review-analysis
+Task,"Phase 08: Detect interviews in magazine PDFs","Detect interviews in the processed magazine archive.",phase-08-interview-archive
+Task,"Phase 08: Extract interview details and dialogue","Extract artist, interviewer, issue, date, questions, and answers; separate questions from answers.",phase-08-interview-archive
+Task,"Phase 08: Analyze recurring interview questions","Analyze recurring interview questions and find the most frequently asked questions.",phase-08-interview-archive
+Task,"Phase 08: Group similarly worded interview questions","Group questions with similar meaning even when their wording differs.",phase-08-interview-archive
+Task,"Phase 08: Identify recurring interview themes","Identify themes that recur across interviews.",phase-08-interview-archive
+Task,"Phase 08: Explore further interview analysis","Experiment with other useful LLM analysis while keeping this area exploratory and avoiding over-engineering.",phase-08-interview-archive
+Task,"Phase 09: Analyze reviewed and unreviewed artists and albums","Find artists reviewed by the magazine, artists never reviewed, albums never reviewed, and interviewed artists who were never reviewed.",phase-09-editorial-analysis
+Task,"Phase 09: Analyze label coverage","Find labels covered by the magazine and determine which labels have the most reviews.",phase-09-editorial-analysis
+Task,"Phase 09: Analyze geographic representation","Find the countries and regions represented in the archive.",phase-09-editorial-analysis
+Task,"Phase 09: Analyze reviewer activity","Identify the most prolific reviewers.",phase-09-editorial-analysis
+Task,"Phase 09: Analyze reviews by year and genre","Report reviews per year and albums or reviews by genre.",phase-09-editorial-analysis
+Task,"Phase 09: Analyze genre changes over time","Analyze how genres changed over time and which genres were reviewed most or least.",phase-09-editorial-analysis
+Task,"Phase 09: Compare received releases with reviewed releases","Compare releases received with releases actually reviewed.",phase-09-editorial-analysis
+Task,"Phase 09: Identify archive coverage gaps","Find gaps in the magazine archive and its coverage.",phase-09-editorial-analysis
+Task,"Phase 10: Find older unreviewed albums","Find albums from previous years that were never reviewed, including albums 5, 10, or 15+ years old.",phase-10-rediscoveries
+Task,"Phase 10: Filter rediscovery candidates","Filter older unreviewed albums by genre, label, year, and other useful criteria.",phase-10-rediscoveries
+Task,"Phase 10: Create a rediscovery shortlist","Create a shortlist of interesting forgotten albums.",phase-10-rediscoveries
+Task,"Phase 10: Explore an Album Never Reviewed feature","Consider using rediscovery candidates for a recurring Album Never Reviewed feature.",phase-10-rediscoveries
+Task,"Phase 10: Keep rediscoveries as an optional feature","Keep rediscoveries separate from the core system.",phase-10-rediscoveries
+Task,"Phase 11: Learn Django through the project","Use the project as a way to learn Django while building the music library interface.",phase-11-web-interface
+Task,"Phase 11: Create the Django application and connect SQLite","Create a basic Django application and connect it to the SQLite music database.",phase-11-web-interface
+Task,"Phase 11: Build an album browser","Create an album browser that displays artwork, artist, album, year, genre, label, and track listing.",phase-11-web-interface
+Task,"Phase 11: Add search and filtering","Add search and filters for genre, year, artist, label, reviewer, and review status.",phase-11-web-interface
+Task,"Phase 11: Create artist and album pages","Create detail pages for artists and albums.",phase-11-web-interface
+Task,"Phase 11: Show magazine reviews on album pages","Display the associated magazine review directly on the album page.",phase-11-web-interface
+Task,"Phase 11: Show artist interviews","Show interviews associated with each artist.",phase-11-web-interface
+Task,"Phase 11: Show related albums","Display related albums where useful.",phase-11-web-interface
+Task,"Phase 12: Add MP3 playback to Django","Add MP3 playback to the Django interface and allow playback of an album from its album page.",phase-12-player
+Task,"Phase 12: Add player controls","Implement play, pause, seek, and volume controls.",phase-12-player
+Task,"Phase 12: Add track selection and queue","Support track selection and a playback queue.",phase-12-player
+Task,"Phase 12: Remember the playback queue","Persist or restore the current queue between visits or sessions.",phase-12-player
+Task,"Phase 12: Keep the player simple and offline-oriented","Keep playback simple and suitable for offline use; do not attempt to recreate Spotify.",phase-12-player
+Task,"Phase 13: Visualize reviews by year, genre, and writer","Create visualizations of reviews by year, genre, and writer.",phase-13-visualization
+Task,"Phase 13: Visualize artist and label coverage over time","Show artists and labels reviewed over time.",phase-13-visualization
+Task,"Phase 13: Visualize genre evolution","Visualize genre evolution and genre review coverage over the years.",phase-13-visualization
+Task,"Phase 13: Highlight review and archive leaders","Show the most reviewed artists and labels and the most prolific writers.",phase-13-visualization
+Task,"Phase 13: Surface unreviewed artists and albums","Highlight albums and artists with no review.",phase-13-visualization
+Task,"Phase 13: Add interactive charts where useful","Use interactive charts where they improve exploration.",phase-13-visualization
+Task,"Phase 14: Add semantic search for reviews and interviews","Search reviews and interviews by meaning rather than exact words.",phase-14-semantic-search
+Task,"Phase 14: Support natural-language music discovery queries","Support queries such as finding reviews that describe dark atmospheric black metal.",phase-14-semantic-search
+Task,"Phase 14: Explore unanticipated archive questions","Experiment with questions that were not anticipated when designing the database.",phase-14-semantic-search
+Task,"Phase 14: Adopt embeddings only when needed","Consider embeddings or vector search only when ordinary database search becomes insufficient.",phase-14-semantic-search
+Task,"Phase 15: Make the music scanner runnable on new files","Make the music scanner runnable whenever new files arrive.",phase-15-automation
+Task,"Phase 15: Detect new albums automatically","Automatically detect newly added albums.",phase-15-automation
+Task,"Phase 15: Detect missing metadata automatically","Automatically detect missing metadata in new or changed files.",phase-15-automation
+Task,"Phase 15: Enrich only new or changed albums","Run external metadata enrichment only for new or changed albums.",phase-15-automation
+Task,"Phase 15: Process new magazine PDFs automatically","Automatically process newly added magazine PDFs.",phase-15-automation
+Task,"Phase 15: Detect new reviews and interviews","Automatically detect new reviews and interviews in processed content.",phase-15-automation
+Task,"Phase 15: Queue AI analysis for new content","Queue AI analysis for newly extracted content.",phase-15-automation
+Task,"Phase 15: Keep automation incremental","Process only new or changed data instead of repeatedly rescanning hundreds of gigabytes.",phase-15-automation
+Task,"MVP: Deliver a searchable music library","Start small. Use Python, Mutagen, SQLite, and Django to scan the music folder and build the initial searchable music database and album browser.",mvp
+Task,"MVP: Build the first album browsing experience","Deliver basic search, an album page, artwork, a track listing, and review status before expanding into later roadmap phases.",mvp
+Task,"MVP: Import a small magazine sample and link reviews","After the basic browser, import one or two magazine PDFs, extract reviews, and link them to albums.",mvp

@@ -3,8 +3,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from db import db_operations
-from sources import local_files
+from .services.files_scanner import read_all_metadata
+from .services import db_importer
 
 from . import repository
 
@@ -52,13 +52,13 @@ def scan_library(source_folder):
         with (repository.PROJECT_ROOT / "config.json").open(encoding="utf-8") as config_file:
             config = json.load(config_file)
 
-        records = local_files.read_all_metadata(source_folder, config, errors=errors)
+        records = read_all_metadata(source_folder, config, errors=errors)
         connection = repository.connect()
         try:
-            db_operations.db_create_schema(connection)
-            db_operations.db_load_data(connection, records)
+            db_importer.db_create_schema(connection)
+            db_importer.db_load_data(connection, records)
             if not errors:
-                db_operations.remove_missing_tracks(
+                db_importer.remove_missing_tracks(
                     connection,
                     source_folder,
                     (record["file_path"] for record in records),

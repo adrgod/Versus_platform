@@ -1,3 +1,6 @@
+# Jira Board
+https://adrianogodinho-1792274415428.atlassian.net/jira/software/projects/VSP/boards/2?filter=&groupBy=none
+
 # Steps on the Roadmap
 
 ## PHASE 1 — MUSIC LIBRARY SCANNER

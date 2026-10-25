@@ -1,4 +1,3 @@
-
 import re
 from collections import Counter
 from pathlib import Path
@@ -31,7 +30,6 @@ def clean_tracknumber(tracknumber):
 
 
 def read_artwork_from_id3(file_path):
-
     try:
         tags = ID3(file_path)
     except (ID3NoHeaderError, OSError):
@@ -40,12 +38,12 @@ def read_artwork_from_id3(file_path):
     pictures = tags.getall("APIC")
     if not pictures:
         return None
-    
+
     cover = next((picture for picture in pictures if picture.type == 3), pictures[0])
 
     image = Image.open(BytesIO(cover.data))
     image = ImageOps.exif_transpose(image)
-    image.thumbnail((600,600), Image.Resampling.LANCZOS)
+    image.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
     output = BytesIO()
     image.convert("RGB").save(
@@ -69,11 +67,10 @@ def read_file_metadata(file_path, config):
     name_fields = config["name_fields"]
 
     for att in file_attributes:
-
         if att == "album_cover":
             file_data[att] = read_artwork_from_id3(file_path)
             continue
-        
+
         value = round(audio_info.length, 2) if att == "length" else file_info.get(att)
         if isinstance(value, list):
             file_data[att] = ", ".join(str(item) for item in value)
@@ -101,7 +98,6 @@ def validate_if_tags_in_filepath(tag_text, filepath_text):
 
 
 def calculate_confidence_for_track(track, file_path):
-
     confidence_level = 0.0
 
     if validate_if_tags_in_filepath(track["artist"], file_path):
@@ -114,39 +110,34 @@ def calculate_confidence_for_track(track, file_path):
     return round(confidence_level, 2)
 
 
-
 def add_track_tag_data_quality_confidence(tracks, mp3_files=None):
     for track in tracks:
-        track['dq_confidence'] = calculate_confidence_for_track(track, track["file_path"])
-
+        track["dq_confidence"] = calculate_confidence_for_track(track, track["file_path"])
     return tracks
 
 
 def check_empty_fields(tracks, quality_attributes):
+    tracks_with_missing_tags = {}
 
-    tracks_with_missing_tags = dict()
-    
     for track in tracks:
         for tag, value in track.items():
             if tag in quality_attributes and not value:
-                
                 tag_key = (
                     track["artist"],
                     track["album"],
                     track["title"],
-                    track["tracknumber"]
+                    track["tracknumber"],
                 )
                 tracks_with_missing_tags[tag_key] = tag
-                
+
     return tracks_with_missing_tags
 
 
 def standardize_release_year(tracks):
-
     dates_by_album = {}
     for track in tracks:
         album_key = (track["artist"], track["album"])
-        date = track["date"].strip()
+        date = str(track.get("date", "")).strip()
         if date:
             dates_by_album.setdefault(album_key, []).append(date)
 
@@ -154,18 +145,16 @@ def standardize_release_year(tracks):
         album_key: Counter(dates).most_common(1)[0][0]
         for album_key, dates in dates_by_album.items()
     }
-    
+
     for track in tracks:
         album_key = (track["artist"], track["album"])
         if album_key in standard_dates:
             track["date"] = standard_dates[album_key]
 
-    #print("Standard release dates by artist and album:", standard_dates)
     return tracks
 
 
 def classify_release_length(tracks):
-
     df = pd.DataFrame(tracks)
 
     df["length"] = pd.to_numeric(df["length"], errors="coerce").fillna(0)
@@ -183,36 +172,32 @@ def classify_release_length(tracks):
 
 
 def read_all_metadata(source_folder, config, errors=None):
+    source_folder = Path(source_folder).expanduser()
 
-    quality_attributes = config["quality_attributes"]
-
-    mp3_files = sorted(
+    if source_folder.is_file():
+        mp3_files = [source_folder] if source_folder.suffix.lower() == ".mp3" else []
+    else:
+        mp3_files = sorted(
             file_path
             for file_path in source_folder.rglob("*")
             if file_path.is_file() and file_path.suffix.lower() == ".mp3"
         )
-    
-    tracks = []
 
+    tracks = []
     for file_path in mp3_files:
         try:
             track = read_file_metadata(file_path, config)
             tracks.append(track)
         except Exception as error:
-            print(f"Could not read {file_path}: {error}")
             if errors is not None:
                 errors.append(f"{file_path}: {error}")
             continue
 
+    if not tracks:
+        return []
+
     tracks_with_tags = add_track_tag_data_quality_confidence(tracks, mp3_files)
+    tracks_with_empty_fields = check_empty_fields(tracks_with_tags, config["quality_attributes"])
+    standardize_release_year(tracks_with_tags)
 
-    tracks_with_empty_fields = check_empty_fields(tracks_with_tags, quality_attributes)
-
-    standardize_release_year(tracks)
-    
-    print("Report with empty fields:")
-    print(tracks_with_empty_fields)
-
-    tracks_with_tags = classify_release_length(tracks_with_tags)
-
-    return tracks_with_tags
+    return classify_release_length(tracks_with_tags)

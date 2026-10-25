@@ -1,12 +1,15 @@
+from collections.abc import Iterable
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.http import StreamingHttpResponse
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from db import db_operations
+from services import db_importer
 from . import repository
 from .scan_service import scan_library
 
@@ -29,8 +32,8 @@ class LibraryWorkflowTests(TestCase):
 		self.addCleanup(roots_patch.stop)
 
 		connection = repository.connect()
-		db_operations.db_create_schema(connection)
-		db_operations.db_load_data(connection, [self.record()])
+		db_importer.db_create_schema(connection)
+		db_importer.db_load_data(connection, [self.record()])
 		repository.get_library_state(connection)
 		connection.execute(
 			"UPDATE tbl_library_state SET source_folder = ? WHERE singleton_id = 1",
@@ -133,7 +136,10 @@ class LibraryWorkflowTests(TestCase):
 			HTTP_RANGE="bytes=3-6",
 		)
 		self.assertEqual(response.status_code, 206)
-		self.assertEqual(b"".join(response.streaming_content), b"3456")
+		self.assertEqual(
+			b"".join(cast(Iterable[bytes], cast(StreamingHttpResponse, response).streaming_content)),
+			b"3456",
+		)
 		self.assertEqual(response["Content-Range"], "bytes 3-6/16")
 
 		connection = repository.connect()
