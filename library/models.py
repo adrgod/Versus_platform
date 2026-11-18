@@ -54,3 +54,22 @@ class Track(models.Model):
                 name="unique_track_title_number_duration_per_album",
             ),
         ]
+
+class LibraryState(models.Model):
+    """Single-row record of the chosen source folder and the last scan's outcome."""
+
+    source_folder = models.CharField(max_length=1000, blank=True)
+    last_scan_started = models.DateTimeField(null=True, blank=True)
+    last_scan_finished = models.DateTimeField(null=True, blank=True)
+    last_scan_status = models.CharField(max_length=20, default="never")
+    scan_error = models.TextField(null=True, blank=True)
+    scanned_track_count = models.IntegerField(default=0)
+
+    @classmethod
+    def load(cls):
+        from library import repository
+
+        state, _ = cls.objects.get_or_create(
+            pk=1, defaults={"source_folder": str(repository.default_source_folder())}
+        )
+        return state

@@ -1,75 +1,56 @@
-import json
 import mimetypes
 import re
 import shutil
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from datetime import date
 from typing import cast
 
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core import signing
-from django.http import HttpResponse, StreamingHttpResponse
-from django.shortcuts import redirect, render
+from django.db import transaction
+from django.db.models import Count, F, Q
+from django.db.models.functions import Lower, TruncDate
+from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from mutagen.easyid3 import EasyID3
 
-from . import repository
+from . import queries, repository
+from .models import Artist, LibraryState, Track
 from .scan_service import start_scan
-
 from .services.files_scanner import (
-    calculate_confidence_for_track,
-    read_artwork_from_id3,
-    read_file_metadata,
+	calculate_confidence_for_track,
+	read_artwork_from_id3,
+	read_file_metadata,
 )
+from .services.importer import import_records, prune_empty
 
-from .services.db_importer import db_create_schema, db_load_data
+
+def _with_covers(albums):
+	albums = list(albums)
+	for album in albums:
+		album.cover_uri = repository.album_cover_data_uri(album.album_cover)
+	return albums
+
 
 @login_required
 def dashboard(request):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		state = repository.get_library_state(connection)
-		stats = repository.dashboard_stats(connection)
-		recent_albums = connection.execute(
-			"""
-			SELECT al.album_id, al.album_name, al.release_year, al.genre, al.album_cover,
-				   ar.artist_name, COUNT(t.track_id) AS track_count
-			FROM tbl_album al
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			LEFT JOIN tbl_track t ON t.album_id = al.album_id
-			GROUP BY al.album_id
-			ORDER BY al.when_loaded DESC, al.album_name COLLATE NOCASE
-			LIMIT 6
-			"""
-		).fetchall()
-	finally:
-		connection.close()
-
-	albums = [dict(album) for album in recent_albums]
-	for album in albums:
-		album["cover_uri"] = repository.album_cover_data_uri(album["album_cover"])
+	recent_albums = queries.albums().order_by("-when_loaded", Lower("album_name"))[:6]
 	return render(request, "library/dashboard.html", {
-		"state": state,
-		"stats": stats,
-		"recent_albums": albums,
+		"state": LibraryState.load(),
+		"stats": queries.dashboard_stats(),
+		"recent_albums": _with_covers(recent_albums),
 	})
 
 
 @login_required
 @require_GET
 def folder_browser(request):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		state = repository.get_library_state(connection)
-		selected_folder = Path(state["source_folder"]).expanduser().resolve()
-	finally:
-		connection.close()
+	state = LibraryState.load()
+	selected_folder = Path(state.source_folder).expanduser().resolve()
 
 	roots = repository.get_allowed_roots()
 	messages_to_show = []
@@ -108,17 +89,9 @@ def folder_browser(request):
 def choose_folder(request):
 	try:
 		selected = repository.resolve_allowed_folder(request.POST.get("folder", ""))
-		connection = repository.connect()
-		try:
-			repository.ensure_schema(connection)
-			repository.get_library_state(connection)
-			connection.execute(
-				"UPDATE tbl_library_state SET source_folder = ? WHERE singleton_id = 1",
-				(str(selected),),
-			)
-			connection.commit()
-		finally:
-			connection.close()
+		state = LibraryState.load()
+		state.source_folder = str(selected)
+		state.save(update_fields=["source_folder"])
 		messages.success(request, f"Library location set to {selected}")
 	except (OSError, RuntimeError, ValueError) as error:
 		messages.error(request, str(error))
@@ -129,13 +102,7 @@ def choose_folder(request):
 @login_required
 @require_POST
 def refresh_library(request):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		state = repository.get_library_state(connection)
-		source_folder = state["source_folder"]
-	finally:
-		connection.close()
+	source_folder = LibraryState.load().source_folder
 
 	try:
 		if start_scan(source_folder):
@@ -166,29 +133,19 @@ def browse(request):
 	return render(request, "library/browse.html", {"data_elements": data_elements})
 
 
+def _split_genres(value):
+	return [part.strip() for part in re.split(r"[,;|]+", value or "") if part.strip()]
+
+
 @login_required
 def genre_index(request):
 	search = request.GET.get("q", "").strip()
-	pattern = f"%{search}%"
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		rows = connection.execute(
-			"""
-			SELECT al.*, ar.artist_name, COUNT(t.track_id) AS track_count
-			FROM tbl_album al
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			LEFT JOIN tbl_track t ON t.album_id = al.album_id
-			GROUP BY al.album_id
-			ORDER BY al.genre COLLATE NOCASE, ar.artist_name COLLATE NOCASE,
-			         al.album_name COLLATE NOCASE
-			""",
-		).fetchall()
-	finally:
-		connection.close()
+	rows = queries.albums().order_by(
+		Lower("album_genre"), Lower("artist__artist_name"), Lower("album_name")
+	)
 	genres_by_key = {}
 	for row in rows:
-		for name in _split_genres(row["genre"]):
+		for name in _split_genres(row.genre):
 			key = name.casefold()
 			if search and search.casefold() not in name.casefold():
 				continue
@@ -198,9 +155,9 @@ def genre_index(request):
 				"artist_ids": set(),
 				"track_count": 0,
 			})
-			genre["album_ids"].add(row["album_id"])
-			genre["artist_ids"].add(row["artist_id"])
-			genre["track_count"] += row["track_count"]
+			genre["album_ids"].add(row.album_id)
+			genre["artist_ids"].add(row.artist_id)
+			genre["track_count"] += row.track_count
 	genres = sorted(
 		({**genre, "album_count": len(genre["album_ids"]), "artist_count": len(genre["artist_ids"])}
 		 for genre in genres_by_key.values()),
@@ -214,33 +171,23 @@ def genre_index(request):
 
 @login_required
 def loaded_date_index(request):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		loaded_dates = connection.execute(
-			"""
-			SELECT DATE(t.when_loaded) AS loaded_date,
-			       COUNT(t.track_id) AS track_count,
-			       COUNT(DISTINCT al.album_id) AS album_count,
-			       COUNT(DISTINCT ar.artist_id) AS artist_count
-			FROM tbl_track t
-			JOIN tbl_album al ON al.album_id = t.album_id
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			WHERE t.when_loaded IS NOT NULL
-			GROUP BY DATE(t.when_loaded)
-			ORDER BY loaded_date DESC
-			"""
-		).fetchall()
-	finally:
-		connection.close()
-	loaded_dates = [dict(row) for row in loaded_dates]
-	for loaded in loaded_dates:
-		loaded["day"] = date.fromisoformat(loaded["loaded_date"])
+	rows = (
+		Track.objects
+		.annotate(loaded_date=TruncDate("when_loaded"))
+		.values("loaded_date")
+		.annotate(
+			track_count=Count("id"),
+			album_count=Count("album", distinct=True),
+			artist_count=Count("album__artist", distinct=True),
+		)
+		.order_by("-loaded_date")
+	)
+	loaded_dates = [
+		{**row, "day": row["loaded_date"], "loaded_date": row["loaded_date"].isoformat()}
+		for row in rows
+		if row["loaded_date"] is not None
+	]
 	return render(request, "library/loaded_date_index.html", {"loaded_dates": loaded_dates})
-
-
-def _split_genres(value):
-	return [part.strip() for part in re.split(r"[,;|]+", value or "") if part.strip()]
 
 
 @login_required
@@ -248,46 +195,20 @@ def genre_detail(request):
 	requested_genre = request.GET.get("name", "").strip()
 	if not requested_genre:
 		return redirect("library:browse")
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		all_albums = connection.execute(
-			"""
-			SELECT al.*, ar.artist_name, COUNT(t.track_id) AS track_count
-			FROM tbl_album al
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			LEFT JOIN tbl_track t ON t.album_id = al.album_id
-			GROUP BY al.album_id
-			ORDER BY ar.artist_name COLLATE NOCASE, al.release_year, al.album_name COLLATE NOCASE
-			"""
-		).fetchall()
-		matching_albums = [
-			row for row in all_albums
-			if any(name.casefold() == requested_genre.casefold() for name in _split_genres(row["genre"]))
-		]
-		if not matching_albums:
-			from django.http import Http404
-			raise Http404("Genre not found")
-		genre_name = next(
-			name for name in _split_genres(matching_albums[0]["genre"])
-			if name.casefold() == requested_genre.casefold()
-		)
-		album_ids = [row["album_id"] for row in matching_albums]
-		placeholders = ",".join("?" for _ in album_ids)
-		tracks = connection.execute(
-			f"""
-			SELECT t.*, al.album_name, al.album_id, ar.artist_id, ar.artist_name
-			FROM tbl_track t
-			JOIN tbl_album al ON al.album_id = t.album_id
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			WHERE t.album_id IN ({placeholders})
-			ORDER BY ar.artist_name COLLATE NOCASE, al.album_name COLLATE NOCASE,
-			         CAST(t.track_number AS INTEGER), t.track_name COLLATE NOCASE
-			""",
-			album_ids,
-		).fetchall()
-	finally:
-		connection.close()
+
+	all_albums = queries.albums().order_by(*queries.album_order())
+	matching_albums = [
+		album for album in all_albums
+		if any(name.casefold() == requested_genre.casefold() for name in _split_genres(album.genre))
+	]
+	if not matching_albums:
+		raise Http404("Genre not found")
+	genre_name = next(
+		name for name in _split_genres(matching_albums[0].genre)
+		if name.casefold() == requested_genre.casefold()
+	)
+	album_ids = [album.album_id for album in matching_albums]
+	tracks = queries.tracks().filter(album_id__in=album_ids).order_by(*queries.track_order())
 
 	artists, albums, track_rows = _prepare_browse_detail(matching_albums, tracks)
 
@@ -303,32 +224,29 @@ def _prepare_browse_detail(matching_albums, tracks):
 	tracks_by_album = {}
 	tracks_by_artist = {}
 	artist_info = {
-		row["artist_id"]: {"artist_id": row["artist_id"], "artist_name": row["artist_name"]}
-		for row in matching_albums
+		album.artist_id: {"artist_id": album.artist_id, "artist_name": album.artist_name}
+		for album in matching_albums
 	}
 	track_rows = []
 	for track in tracks:
-		track_row = dict(track)
-		track_row["player_url"] = None
-		if not track["file_path"] or not repository.is_allowed_file(track["file_path"]):
-			track_rows.append(track_row)
+		track.player_url = None
+		track_rows.append(track)
+		if not track.file_path or not repository.is_allowed_file(track.file_path):
 			continue
 		player_track = {
-			"url": reverse("library:stream-track", args=(track["track_id"],)),
-			"title": track["track_name"],
-			"album": track["album_name"],
-			"artist": track["artist_name"],
+			"url": reverse("library:stream-track", args=(track.track_id,)),
+			"title": track.track_name,
+			"album": track.album_name,
+			"artist": track.artist_name,
 		}
-		track_row["player_url"] = player_track["url"]
-		track_rows.append(track_row)
-		tracks_by_album.setdefault(track["album_id"], []).append(player_track)
-		tracks_by_artist.setdefault(track["artist_id"], []).append(player_track)
+		track.player_url = player_track["url"]
+		tracks_by_album.setdefault(track.album_id, []).append(player_track)
+		tracks_by_artist.setdefault(track.artist_id, []).append(player_track)
 
-	albums = [dict(row) for row in matching_albums]
+	albums = _with_covers(matching_albums)
 	for album in albums:
-		album["cover_uri"] = repository.album_cover_data_uri(album["album_cover"])
-		album["queue_tracks"] = tracks_by_album.get(album["album_id"], [])
-		album["queue_id"] = f"album-queue-{album['album_id']}"
+		album.queue_tracks = tracks_by_album.get(album.album_id, [])
+		album.queue_id = f"album-queue-{album.album_id}"
 	artists = sorted(artist_info.values(), key=lambda artist: artist["artist_name"].casefold())
 	for artist in artists:
 		artist["queue_tracks"] = tracks_by_artist.get(artist["artist_id"], [])
@@ -342,47 +260,17 @@ def loaded_date_detail(request):
 	try:
 		loaded_date = date.fromisoformat(requested_date)
 	except ValueError:
-		from django.http import Http404
 		raise Http404("Loaded date not found")
 
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		date_row = connection.execute(
-			"SELECT DATE(when_loaded) AS loaded_date FROM tbl_track WHERE DATE(when_loaded) = ? LIMIT 1",
-			(loaded_date.isoformat(),),
-		).fetchone()
-		if date_row is None:
-			from django.http import Http404
-			raise Http404("Loaded date not found")
-		matching_albums = connection.execute(
-			"""
-			SELECT DISTINCT al.*, ar.artist_name, COUNT(t.track_id) AS track_count
-			FROM tbl_album al
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			JOIN tbl_track t ON t.album_id = al.album_id
-			WHERE DATE(t.when_loaded) = ?
-			GROUP BY al.album_id
-			ORDER BY ar.artist_name COLLATE NOCASE, al.album_name COLLATE NOCASE
-			""",
-			(loaded_date.isoformat(),),
-		).fetchall()
-		tracks = connection.execute(
-			"""
-			SELECT t.*, al.album_name, al.album_id, ar.artist_id, ar.artist_name
-			FROM tbl_track t
-			JOIN tbl_album al ON al.album_id = t.album_id
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			WHERE DATE(t.when_loaded) = ?
-			ORDER BY ar.artist_name COLLATE NOCASE, al.album_name COLLATE NOCASE,
-			         CAST(t.track_number AS INTEGER), t.track_name COLLATE NOCASE
-			""",
-			(loaded_date.isoformat(),),
-		).fetchall()
-	finally:
-		connection.close()
+	loaded_on_day = Q(track__when_loaded__date=loaded_date)
+	if not Track.objects.filter(when_loaded__date=loaded_date).exists():
+		raise Http404("Loaded date not found")
+	matching_albums = queries.albums(loaded_on_day).order_by(
+		Lower("artist__artist_name"), Lower("album_name")
+	)
+	tracks = queries.tracks().filter(when_loaded__date=loaded_date).order_by(*queries.track_order())
 
-	artists, albums, track_rows = _prepare_browse_detail(matching_albums, tracks)
+	artists, albums, track_rows = _prepare_browse_detail(list(matching_albums), tracks)
 	return render(request, "library/loaded_date_detail.html", {
 		"loaded_date": loaded_date,
 		"artists": artists,
@@ -394,116 +282,54 @@ def loaded_date_detail(request):
 @login_required
 def artist_list(request):
 	search = request.GET.get("q", "").strip()
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		rows = connection.execute(
-			"""
-			SELECT ar.artist_id, ar.artist_name, COUNT(DISTINCT al.album_id) AS album_count,
-				   COUNT(t.track_id) AS track_count
-			FROM tbl_artist ar
-			LEFT JOIN tbl_album al ON al.artist_id = ar.artist_id
-			LEFT JOIN tbl_track t ON t.album_id = al.album_id
-			WHERE ar.artist_name LIKE ? COLLATE NOCASE
-			GROUP BY ar.artist_id
-			ORDER BY ar.artist_name COLLATE NOCASE
-			LIMIT 500
-			""",
-			(f"%{search}%",),
-		).fetchall()
-	finally:
-		connection.close()
+	rows = (
+		queries.artists()
+		.filter(artist_name__icontains=search)
+		.order_by(Lower("artist_name"))[:500]
+	)
 	return render(request, "library/artist_list.html", {"artists": rows, "search": search})
 
 
 @login_required
 def artist_detail(request, artist_id):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		artist = connection.execute(
-			"SELECT * FROM tbl_artist WHERE artist_id = ?", (artist_id,)
-		).fetchone()
-		if artist is None:
-			from django.http import Http404
-			raise Http404("Artist not found")
-		rows = connection.execute(
-			"""
-			SELECT al.*, COUNT(t.track_id) AS track_count
-			FROM tbl_album al LEFT JOIN tbl_track t ON t.album_id = al.album_id
-			WHERE al.artist_id = ?
-			GROUP BY al.album_id
-			ORDER BY al.release_year, al.album_name COLLATE NOCASE
-			""",
-			(artist_id,),
-		).fetchall()
-	finally:
-		connection.close()
-	albums = [dict(row) for row in rows]
-	for album in albums:
-		album["cover_uri"] = repository.album_cover_data_uri(album["album_cover"])
-	return render(request, "library/artist_detail.html", {"artist": artist, "albums": albums})
+	artist = get_object_or_404(Artist, pk=artist_id)
+	albums = (
+		queries.albums()
+		.filter(artist_id=artist_id)
+		.order_by("album_release_year", Lower("album_name"))
+	)
+	return render(request, "library/artist_detail.html", {
+		"artist": artist,
+		"albums": _with_covers(albums),
+	})
 
 
 @login_required
 def album_list(request):
 	search = request.GET.get("q", "").strip()
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		rows = connection.execute(
-			"""
-			SELECT al.*, ar.artist_name, COUNT(t.track_id) AS track_count
-			FROM tbl_album al
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			LEFT JOIN tbl_track t ON t.album_id = al.album_id
-			WHERE al.album_name LIKE ? COLLATE NOCASE OR ar.artist_name LIKE ? COLLATE NOCASE
-			GROUP BY al.album_id
-			ORDER BY ar.artist_name COLLATE NOCASE, al.release_year, al.album_name COLLATE NOCASE
-			LIMIT 500
-			""",
-			(f"%{search}%", f"%{search}%"),
-		).fetchall()
-	finally:
-		connection.close()
-	albums = [dict(row) for row in rows]
-	for album in albums:
-		album["cover_uri"] = repository.album_cover_data_uri(album["album_cover"])
-	return render(request, "library/album_list.html", {"albums": albums, "search": search})
+	rows = (
+		queries.albums()
+		.filter(Q(album_name__icontains=search) | Q(artist__artist_name__icontains=search))
+		.order_by(*queries.album_order())[:500]
+	)
+	return render(request, "library/album_list.html", {"albums": _with_covers(rows), "search": search})
 
 
 @login_required
 def album_detail(request, album_id):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		album = connection.execute(
-			"""
-			SELECT al.*, ar.artist_name
-			FROM tbl_album al JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			WHERE al.album_id = ?
-			""",
-			(album_id,),
-		).fetchone()
-		if album is None:
-			from django.http import Http404
-			raise Http404("Album not found")
-		tracks = connection.execute(
-			"SELECT * FROM tbl_track WHERE album_id = ? ORDER BY CAST(track_number AS INTEGER), track_number, track_name COLLATE NOCASE",
-			(album_id,),
-		).fetchall()
-	finally:
-		connection.close()
-	album = dict(album)
-	album["cover_uri"] = repository.album_cover_data_uri(album["album_cover"])
+	album = get_object_or_404(queries.albums(), pk=album_id)
+	album.cover_uri = repository.album_cover_data_uri(album.album_cover)
+	tracks = list(
+		queries.tracks().filter(album_id=album_id).order_by("track_number", Lower("track_title"))
+	)
 	playable_tracks = [
 		{
-			"url": reverse("library:stream-track", args=(track["track_id"],)),
-			"title": track["track_name"],
-			"album": album["album_name"],
+			"url": reverse("library:stream-track", args=(track.track_id,)),
+			"title": track.track_name,
+			"album": album.album_name,
 		}
 		for track in tracks
-		if track["file_path"] and repository.is_allowed_file(track["file_path"])
+		if track.file_path and repository.is_allowed_file(track.file_path)
 	]
 	return render(request, "library/album_detail.html", {
 		"album": album,
@@ -515,18 +341,11 @@ def album_detail(request, album_id):
 @login_required
 @require_GET
 def stream_track(request, track_id):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		track = connection.execute(
-			"SELECT file_path, track_name FROM tbl_track WHERE track_id = ?", (track_id,)
-		).fetchone()
-	finally:
-		connection.close()
-	if track is None or not track["file_path"] or not repository.is_allowed_file(track["file_path"]):
+	file_path = Track.objects.filter(pk=track_id).values_list("track_file_path", flat=True).first()
+	if not file_path or not repository.is_allowed_file(file_path):
 		return HttpResponse("Audio file is unavailable.", status=404)
 
-	path = Path(track["file_path"]).resolve()
+	path = Path(file_path).resolve()
 	file_size = path.stat().st_size
 	range_header = request.headers.get("Range")
 	start, end, status = 0, file_size - 1, 200
@@ -571,26 +390,19 @@ def stream_track(request, track_id):
 	return response
 
 
-def _quality_rows(connection, search=""):
-	rows = connection.execute(
-		"""
-		SELECT t.track_id, t.track_name, t.track_number, t.dq_confidence, t.file_path,
-			   al.album_name, al.release_year, al.genre, ar.artist_name
-		FROM tbl_track t
-		JOIN tbl_album al ON al.album_id = t.album_id
-		JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-		WHERE t.track_name LIKE ? COLLATE NOCASE
-		   OR al.album_name LIKE ? COLLATE NOCASE
-		   OR ar.artist_name LIKE ? COLLATE NOCASE
-		ORDER BY ar.artist_name COLLATE NOCASE, al.album_name COLLATE NOCASE,
-				 CAST(t.track_number AS INTEGER), t.track_name COLLATE NOCASE
-		LIMIT 1000
-		""",
-		(f"%{search}%", f"%{search}%", f"%{search}%"),
-	).fetchall()
-	config = repository.get_config()
-	fields = config["quality_attributes"]
-	field_values = {
+def _quality_rows(search=""):
+	rows = (
+		queries.tracks()
+		.annotate(release_year=F("album__album_release_year"), genre=F("album__album_genre"))
+		.filter(
+			Q(track_title__icontains=search)
+			| Q(album__album_name__icontains=search)
+			| Q(album__artist__artist_name__icontains=search)
+		)
+		.order_by(*queries.track_order())[:1000]
+	)
+	fields = repository.get_config()["quality_attributes"]
+	row_attributes = {
 		"artist": "artist_name",
 		"album": "album_name",
 		"title": "track_name",
@@ -600,31 +412,26 @@ def _quality_rows(connection, search=""):
 	}
 	result = []
 	for row in rows:
-		missing = [
+		row.missing_fields = [
 			field for field in fields
-			if not row[field_values.get(field, field)]
+			if not getattr(row, row_attributes.get(field, field))
 		]
-		item = dict(row)
-		item["missing_fields"] = missing
-		item["quality_percent"] = round(100 * (len(fields) - len(missing)) / len(fields)) if fields else 100
-		result.append(item)
+		row.quality_percent = (
+			round(100 * (len(fields) - len(row.missing_fields)) / len(fields)) if fields else 100
+		)
+		result.append(row)
 	return result
 
 
 @login_required
 def quality_report(request):
 	search = request.GET.get("q", "").strip()
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		tracks = _quality_rows(connection, search)
-	finally:
-		connection.close()
+	tracks = _quality_rows(search)
 	return render(request, "library/quality_report.html", {
 		"tracks": tracks,
 		"search": search,
-		"incomplete_count": sum(bool(track["missing_fields"]) for track in tracks),
-		"average_score": round(sum(track["quality_percent"] for track in tracks) / len(tracks)) if tracks else 0,
+		"incomplete_count": sum(bool(track.missing_fields) for track in tracks),
+		"average_score": round(sum(track.quality_percent for track in tracks) / len(tracks)) if tracks else 0,
 	})
 
 
@@ -651,25 +458,8 @@ def _tag_form(fields, *, data=None, initial=None):
 
 
 def _get_track_for_edit(track_id):
-	connection = repository.connect()
-	try:
-		repository.ensure_schema(connection)
-		track = connection.execute(
-			"""
-			SELECT t.*, al.album_name, ar.artist_name
-			FROM tbl_track t
-			JOIN tbl_album al ON al.album_id = t.album_id
-			JOIN tbl_artist ar ON ar.artist_id = al.artist_id
-			WHERE t.track_id = ?
-			""",
-			(track_id,),
-		).fetchone()
-	finally:
-		connection.close()
-	if track is None:
-		from django.http import Http404
-		raise Http404("Track not found")
-	if not track["file_path"] or not repository.is_allowed_file(track["file_path"]):
+	track = get_object_or_404(queries.tracks(), pk=track_id)
+	if not track.file_path or not repository.is_allowed_file(track.file_path):
 		raise ValueError("This track has no usable path. Refresh the library before editing tags.")
 	return track
 
@@ -681,7 +471,7 @@ def edit_track_tags(request, track_id):
 	except ValueError as error:
 		messages.error(request, str(error))
 		return redirect("library:quality-report")
-	path = Path(track["file_path"]).resolve()
+	path = Path(track.file_path).resolve()
 	fields = _tag_fields()
 	try:
 		current_tags = _easyid3_values(path, fields)
@@ -724,7 +514,7 @@ def confirm_tag_edit(request, track_id):
 		if payload["track_id"] != track_id:
 			raise signing.BadSignature("Preview does not match this track")
 		track = _get_track_for_edit(track_id)
-		path = Path(track["file_path"]).resolve()
+		path = Path(track.file_path).resolve()
 		original_stat = path.stat()
 		if (original_stat.st_mtime_ns, original_stat.st_size) != (payload["mtime_ns"], payload["size"]):
 			raise ValueError("The MP3 changed after the preview. Reload the editor and review again.")
@@ -738,9 +528,7 @@ def confirm_tag_edit(request, track_id):
 	backup_path = backup_folder / f"track-{track_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.mp3"
 	shutil.copy2(path, backup_path)
 
-	connection = repository.connect()
 	try:
-		old = connection.execute("SELECT album_id FROM tbl_track WHERE track_id = ?", (track_id,)).fetchone()
 		tags = EasyID3(path)
 		for field in fields:
 			value = payload["tags"].get(field, "")
@@ -754,34 +542,23 @@ def confirm_tag_edit(request, track_id):
 		if any(verified[field] != payload["tags"].get(field, "") for field in fields):
 			raise ValueError("The written tags did not verify; the backup will be restored.")
 
-		with (repository.PROJECT_ROOT / "config.json").open(encoding="utf-8") as config_file:
-			config = json.load(config_file)
-
-		record = read_file_metadata(path, config)
+		record = read_file_metadata(path, repository.get_config())
 		record["album_cover"] = read_artwork_from_id3(path)
 		cast(dict[str, object], record)["dq_confidence"] = calculate_confidence_for_track(record, record["file_path"])
 
-		connection.execute("BEGIN IMMEDIATE")
-		connection.execute("DELETE FROM tbl_track WHERE track_id = ?", (track_id,))
-		db_create_schema(connection)
-		db_load_data(connection, [record])
-		if old is not None:
-			connection.execute(
-				"DELETE FROM tbl_album WHERE album_id = ? AND NOT EXISTS (SELECT 1 FROM tbl_track WHERE album_id = ?)",
-				(old["album_id"], old["album_id"]),
-			)
-		connection.execute(
-			"DELETE FROM tbl_artist WHERE NOT EXISTS (SELECT 1 FROM tbl_album WHERE artist_id = tbl_artist.artist_id)"
-		)
-		connection.commit()
+		# The tags may change which artist/album/track this is, so the old row is
+		# replaced and anything left empty is pruned. If the new tags cannot be
+		# stored the whole change rolls back and the file is restored below.
+		with transaction.atomic():
+			Track.objects.filter(pk=track_id).delete()
+			stats = import_records([record])
+			if stats["skipped"]:
+				raise ValueError("Artist, album and title cannot be empty; the original file will be restored.")
+			prune_empty()
 	except Exception as error:
-		connection.rollback()
-		connection.close()
 		shutil.copy2(backup_path, path)
 		messages.error(request, f"Could not save tags; original file restored from backup: {error}")
 		return redirect("library:edit-tags", track_id=track_id)
-	else:
-		connection.close()
 
 	messages.success(request, f"Tags saved and verified. Backup: {backup_path.name}")
 	return redirect("library:album-list")
