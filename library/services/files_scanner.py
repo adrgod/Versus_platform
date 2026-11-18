@@ -1,5 +1,6 @@
 import re
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 from mutagen.easyid3 import EasyID3
@@ -56,6 +57,27 @@ def read_artwork_from_id3(file_path):
     return output.getvalue()
 
 
+def parse_batch_path(file_path):
+    """Batch date and publisher from ``.../YYYYMMDD/PUBLISHER/BAND/ALBUM/file``.
+
+    Returns ``(date | None, str)``. The closest ``YYYYMMDD`` folder that still
+    leaves room for publisher, band, album and file is the batch; the folder
+    after it is the publisher. Paths that do not follow the layout give
+    ``(None, "")``.
+    """
+    parts = Path(file_path).parts
+    for index in range(len(parts) - 5, -1, -1):
+        name = parts[index]
+        if len(name) != 8 or not name.isdigit():
+            continue
+        try:
+            batch_date = datetime.strptime(name, "%Y%m%d").date()
+        except ValueError:
+            continue
+        return batch_date, parts[index + 1].strip()
+    return None, ""
+
+
 def read_file_metadata(file_path, config):
     file_info = EasyID3(file_path)
     audio_info = MP3(file_path).info
@@ -85,6 +107,12 @@ def read_file_metadata(file_path, config):
 
         if att == "tracknumber":
             file_data[att] = clean_tracknumber(file_data[att])
+
+    # The tag leads; the folder name only fills a missing publisher.
+    batch_date, folder_publisher = parse_batch_path(file_path)
+    file_data["batch_date"] = batch_date
+    if not str(file_data.get("publisher") or "").strip():
+        file_data["publisher"] = folder_publisher
 
     return file_data
 

@@ -6,6 +6,7 @@ only written when a value really changed.
 """
 import re
 from collections import Counter
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -38,6 +39,21 @@ def clean_decimal(value):
         return Decimal(str(value)).quantize(TWO_PLACES)
     except InvalidOperation:
         return None
+
+
+def clean_date(value):
+    """A date, or a 'YYYYMMDD' / 'YYYY-MM-DD' string; None when absent or invalid."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    for date_format in ("%Y%m%d", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, date_format).date()
+        except ValueError:
+            continue
+    return None
 
 
 def clean_blob(value):
@@ -105,8 +121,9 @@ def _import_record(record, model_name, stats, on_skip):
             "album_genre": clean_text(record.get("genre")),
             "album_length_class": clean_text(record.get("album_length_class")),
             "album_cover": clean_blob(record.get("album_cover")),
+            "album_batch_date": clean_date(record.get("batch_date")),
         },
-        fill_only={"album_cover"},
+        fill_only={"album_cover", "album_batch_date"},
         defaults={"album_discnumber": clean_int(record.get("discnumber")) or 1},
         stats=stats,
     )
