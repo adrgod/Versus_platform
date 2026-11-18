@@ -1,0 +1,22 @@
+{% extends "library/base.html" %}
+{% block title %}Albums by decade{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:browse' %}">Browse</a><span>/</span><a href="{% url 'library:explore' %}">Explore</a><span>/</span>Decades</div>
+<section class="page-heading"><div><span class="eyebrow">EXPLORE / DECADES</span><h1>Albums by decade</h1><p class="subheading">Each decade runs from year XXX0 to XXX9. Albums are ranked by their MusicBrainz community rating.{% if undated_count %} {{ undated_count }} album{{ undated_count|pluralize }} without a year {{ undated_count|pluralize:"is,are" }} left out.{% endif %}</p></div></section>
+
+{% if decades %}
+<section class="decade-overview" aria-label="Albums per decade">
+  {% for decade in decades %}<a class="decade-bar" href="#decade-{{ decade.start }}"><span>{{ decade.label }}</span><i style="--bar: {{ decade.bar }}%"></i><b>{{ decade.album_count }}</b></a>{% endfor %}
+</section>
+{% for decade in decades %}
+<section class="decade-section" id="decade-{{ decade.start }}">
+  <div class="section-heading"><div><span class="eyebrow">{{ decade.start }} – {{ decade.end }}</span><h2>{{ decade.label }}</h2></div>
+    <div class="decade-stats"><span><b>{{ decade.album_count }}</b> albums</span><span><b>{{ decade.artist_count }}</b> artists</span><span><b>{% if decade.average != None %}★ {{ decade.average|floatformat:2 }}{% else %}—{% endif %}</b> average of {{ decade.rated_count }} rated</span><a class="quiet-link" href="{{ decade.explore_url }}">Explore the {{ decade.label }} <span>↗</span></a></div>
+  </div>
+  {% if decade.top %}<ol class="ranking-list">
+    {% for album in decade.top %}<li><a href="{% url 'library:album-detail' album.album_id %}"><span class="rank">{{ forloop.counter|stringformat:"02d" }}</span><span class="rank-cover">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="" loading="lazy">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</span><span class="rank-copy"><strong>{{ album.album_name }}</strong><small>{{ album.artist_name }} · {{ album.sort_year }}</small></span><span class="rank-score">★ {{ album.rating|floatformat:2 }}<small>{{ album.rating_votes }} vote{{ album.rating_votes|pluralize }}</small></span></a></li>{% endfor %}
+  </ol>{% else %}<p class="empty-note">No rated albums from this decade yet. Ratings come from the MusicBrainz lookup.</p>{% endif %}
+</section>
+{% endfor %}
+{% else %}<div class="empty-state"><span class="empty-mark">∅</span><h3>No dated albums</h3><p>Albums need a year in their tags or from the MusicBrainz lookup.</p></div>{% endif %}
+{% endblock %}

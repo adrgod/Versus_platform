@@ -2,6 +2,7 @@ import mimetypes
 import re
 import shutil
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import cast
 
@@ -9,23 +10,29 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core import signing
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, F, Q
-from django.db.models.functions import Lower, TruncDate
+from django.db.models.functions import Coalesce, Lower, TruncDate
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.views.decorators.http import require_GET, require_POST
 from mutagen.easyid3 import EasyID3
 
-from . import queries, repository
-from .models import Album, Artist, LibraryState, Track
+from . import enrichment_service, queries, repository
+from .models import (
+	Album, AlbumFacet, AlbumProfile, Artist, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
+)
 from .scan_service import start_scan
 from .services.files_scanner import (
 	calculate_confidence_for_track,
 	read_artwork_from_id3,
 	read_file_metadata,
 )
+from .services import enrichment as enrichment_api
+from .services import explorer
 from .services.importer import import_records, prune_empty
 from .services.tag_writer import TagSnapshot, batch_files, get_job, plan_file, start_batch_write
 
@@ -125,6 +132,18 @@ def browse(request):
 			"kind": "genre",
 		},
 		{
+			"name": "Tag explorer",
+			"description": "Combine genres, countries, decades, musicians, studios and more.",
+			"url": reverse("library:explore"),
+			"kind": "explore",
+		},
+		{
+			"name": "Decades",
+			"description": "Top-rated albums of each decade.",
+			"url": reverse("library:decade-index"),
+			"kind": "decade",
+		},
+		{
 			"name": "Loaded date",
 			"description": "Browse music by the date it entered the database.",
 			"url": reverse("library:loaded-date-index"),
@@ -132,10 +151,6 @@ def browse(request):
 		},
 	]
 	return render(request, "library/browse.html", {"data_elements": data_elements})
-
-
-def _split_genres(value):
-	return [part.strip() for part in re.split(r"[,;|]+", value or "") if part.strip()]
 
 
 @login_required
@@ -146,7 +161,7 @@ def genre_index(request):
 	)
 	genres_by_key = {}
 	for row in rows:
-		for name in _split_genres(row.genre):
+		for name in explorer.split_genres(row.genre):
 			key = name.casefold()
 			if search and search.casefold() not in name.casefold():
 				continue
@@ -200,12 +215,12 @@ def genre_detail(request):
 	all_albums = queries.albums().order_by(*queries.album_order())
 	matching_albums = [
 		album for album in all_albums
-		if any(name.casefold() == requested_genre.casefold() for name in _split_genres(album.genre))
+		if any(name.casefold() == requested_genre.casefold() for name in explorer.split_genres(album.genre))
 	]
 	if not matching_albums:
 		raise Http404("Genre not found")
 	genre_name = next(
-		name for name in _split_genres(matching_albums[0].genre)
+		name for name in explorer.split_genres(matching_albums[0].genre)
 		if name.casefold() == requested_genre.casefold()
 	)
 	album_ids = [album.album_id for album in matching_albums]
@@ -299,9 +314,33 @@ def artist_detail(request, artist_id):
 		.filter(artist_id=artist_id)
 		.order_by("album_release_year", Lower("album_name"))
 	)
+	profile = ArtistProfile.objects.filter(artist=artist).first()
+	links = artist.facet_links.select_related("facet").order_by("-weight", "facet__name")
+	chips = _facet_chips(links)
+	lineup = []
+	if profile and profile.status == EnrichmentStatus.MATCHED:
+		for member in profile.lineup:
+			lineup.append({
+				**member,
+				"url": facet_url(FacetKind.MEMBER, member["name"]),
+				"instrument_links": [
+					{"name": name, "url": facet_url(FacetKind.INSTRUMENT, name)} for name in member["instruments"]
+				],
+			})
+	matched = profile is not None and profile.status == EnrichmentStatus.MATCHED
+	country = (profile.country if matched else "") or artist.artist_country
 	return render(request, "library/artist_detail.html", {
 		"artist": artist,
 		"albums": _with_covers(albums),
+		"profile": profile,
+		"matched": matched,
+		"genres": chips.get(FacetKind.GENRE, []),
+		"lineup": lineup,
+		"discography": profile.discography if matched else [],
+		"country": country,
+		"country_url": facet_url("country", country) if country else None,
+		"formed": (profile.begin_year if matched else None) or artist.artist_formed_year,
+		"job": enrichment_service.get_job(),
 	})
 
 
@@ -333,11 +372,39 @@ def album_detail(request, album_id):
 		for track in tracks
 		if track.file_path and repository.is_allowed_file(track.file_path)
 	]
+	profile = AlbumProfile.objects.filter(album_id=album_id).first()
+	matched = profile is not None and profile.status == EnrichmentStatus.MATCHED
+	chips = _facet_chips(AlbumFacet.objects.filter(album_id=album_id).select_related("facet").order_by("-weight", "facet__name"))
+	credit_groups = []
+	if matched:
+		for kind, label in [
+			(FacetKind.STUDIO, "Recorded / mixed at"),
+			(FacetKind.PRODUCER, "Produced by"),
+			(FacetKind.ENGINEER, "Sound engineering"),
+			(FacetKind.ARTWORK, "Artwork"),
+			(FacetKind.MUSICIAN, "Musicians"),
+			(FacetKind.LABEL, "Label"),
+		]:
+			entries = [
+				{**credit, "url": facet_url(kind, credit["name"])}
+				for credit in profile.credits if credit["kind"] == kind
+			]
+			if entries:
+				credit_groups.append({"label": label, "entries": entries})
+	year = album.album_release_year or (profile.release_year if matched else None)
+	decade = explorer.decade_label(year)
 	return render(request, "library/album_detail.html", {
 		"album": album,
 		"tracks": tracks,
 		"multi_disc": multi_disc,
 		"player_tracks": playable_tracks,
+		"profile": profile,
+		"matched": matched,
+		"genres": chips.get(FacetKind.GENRE, []),
+		"credit_groups": credit_groups,
+		"year": year,
+		"decade": decade,
+		"decade_url": facet_url("decade", decade) if decade else None,
 	})
 
 
@@ -652,3 +719,216 @@ def batch_status(request, day):
 	batch_date = _parse_batch_day(day)
 	job = get_job(batch_date)
 	return render(request, "library/batch_status.html", {"day": day, "batch_date": batch_date, "job": job})
+
+
+# ---------------------------------------------------------------------------
+# Online enrichment and tag explorer
+# ---------------------------------------------------------------------------
+
+
+EXPLORE_SORTS = {
+	"year": ("Year", [F("sort_year").asc(nulls_last=True), Lower("artist__artist_name")]),
+	"rating": ("Rating", [F("rating").desc(nulls_last=True), F("rating_votes").desc(), Lower("album_name")]),
+	"artist": ("Artist", [Lower("artist__artist_name"), F("sort_year").asc(nulls_last=True)]),
+	"title": ("Title", [Lower("album_name")]),
+}
+
+
+def explore_url(params=(), sort=None):
+	query = [("f", param) for param in params]
+	if sort and sort != "year":
+		query.append(("sort", sort))
+	url = reverse("library:explore")
+	return f"{url}?{urlencode(query)}" if query else url
+
+
+def facet_url(kind, name):
+	return explore_url([explorer.selection_param(kind, name.casefold())])
+
+
+def _enriched_albums(queryset):
+	return queryset.annotate(
+		rating=F("profile__rating"),
+		rating_votes=F("profile__rating_votes"),
+		sort_year=Coalesce("album_release_year", "profile__release_year"),
+	)
+
+
+@login_required
+def explore(request):
+	sort = request.GET.get("sort", "year")
+	if sort not in EXPLORE_SORTS:
+		sort = "year"
+	result = explorer.explore(explorer.parse_selection(request.GET.getlist("f")))
+	current = [item["param"] for item in result.selected]
+
+	for group in result.groups:
+		for row in group.rows:
+			params = [p for p in current if p != row["param"]] if row["selected"] else current + [row["param"]]
+			row["url"] = explore_url(params, sort)
+		# The first ten values, plus any ticked value further down, stay visible.
+		group.top_rows = [row for index, row in enumerate(group.rows) if index < 10 or row["selected"]]
+		group.more_rows = [row for index, row in enumerate(group.rows) if index >= 10 and not row["selected"]]
+	for item in result.selected:
+		item["remove_url"] = explore_url([p for p in current if p != item["param"]], sort)
+
+	albums = _enriched_albums(queries.albums().filter(id__in=result.album_ids)).order_by(*EXPLORE_SORTS[sort][1])
+	page = Paginator(albums, 48).get_page(request.GET.get("page"))
+	page_albums = _with_covers(page.object_list)
+
+	artist_rows = {}
+	album_artist_ids = Album.objects.filter(id__in=result.album_ids).values_list("artist_id", flat=True)
+	for artist_id in album_artist_ids:
+		artist_rows.setdefault(artist_id, 0)
+		artist_rows[artist_id] += 1
+	artists = []
+	for artist in Artist.objects.filter(id__in=artist_rows).select_related("profile").order_by(Lower("artist_name")):
+		profile = getattr(artist, "profile", None)
+		matched = profile is not None and profile.status == EnrichmentStatus.MATCHED
+		artists.append({
+			"id": artist.pk,
+			"name": artist.artist_name,
+			"country": (profile.country if matched else "") or artist.artist_country,
+			"formed": (profile.begin_year if matched else None) or artist.artist_formed_year,
+			"album_count": artist_rows[artist.pk],
+		})
+
+	page_query = [("f", param) for param in current] + ([("sort", sort)] if sort != "year" else [])
+	return render(request, "library/explore.html", {
+		"groups": [group for group in result.groups if group.rows],
+		"selected": result.selected,
+		"clear_url": explore_url(sort=sort),
+		"albums": page_albums,
+		"page": page,
+		"page_query": urlencode(page_query),
+		"album_total": len(result.album_ids),
+		"artists": artists,
+		"sorts": [{"key": key, "label": label, "url": explore_url(current, key), "active": key == sort}
+				  for key, (label, _) in EXPLORE_SORTS.items()],
+		"has_profiles": ArtistProfile.objects.filter(status=EnrichmentStatus.MATCHED).exists(),
+	})
+
+
+@login_required
+def decade_index(request):
+	albums = _enriched_albums(queries.albums()).filter(sort_year__isnull=False)
+	by_decade = {}
+	for album in albums:
+		by_decade.setdefault(album.sort_year // 10 * 10, []).append(album)
+	decades = []
+	largest = max((len(items) for items in by_decade.values()), default=1)
+	for start in sorted(by_decade):
+		items = by_decade[start]
+		rated = sorted((a for a in items if a.rating is not None),
+					   key=lambda a: (-a.rating, -(a.rating_votes or 0), a.album_name.casefold()))
+		label = explorer.decade_label(start)
+		top = _with_covers(rated[:10])
+		decades.append({
+			"label": label,
+			"start": start,
+			"end": start + 9,
+			"album_count": len(items),
+			"artist_count": len({a.artist_id for a in items}),
+			"rated_count": len(rated),
+			"average": round(sum(float(a.rating) for a in rated) / len(rated), 2) if rated else None,
+			"bar": round(100 * len(items) / largest),
+			"top": top,
+			"explore_url": explore_url([explorer.selection_param("decade", label.casefold())], "rating"),
+		})
+	return render(request, "library/decade_index.html", {
+		"decades": decades,
+		"undated_count": queries.albums().count() - albums.count(),
+	})
+
+
+def _status_counts(model):
+	counts = dict(model.objects.values_list("status").annotate(n=Count("id")))
+	return {
+		"matched": counts.get(EnrichmentStatus.MATCHED, 0),
+		"not_found": counts.get(EnrichmentStatus.NOT_FOUND, 0),
+		"error": counts.get(EnrichmentStatus.ERROR, 0),
+	}
+
+
+@login_required
+def enrichment_status(request):
+	artist_counts = _status_counts(ArtistProfile)
+	album_counts = _status_counts(AlbumProfile)
+	artist_counts["pending"] = Artist.objects.count() - sum(artist_counts.values())
+	album_counts["pending"] = Album.objects.count() - sum(album_counts.values())
+
+	unmatched_artists = (
+		ArtistProfile.objects.filter(status__in=[EnrichmentStatus.NOT_FOUND, EnrichmentStatus.ERROR])
+		.select_related("artist").order_by(Lower("artist__artist_name"))
+	)
+	doubtful_artists = (
+		ArtistProfile.objects.filter(status=EnrichmentStatus.MATCHED, match_score__lt=Decimal("0.80"))
+		.select_related("artist").order_by("match_score")
+	)
+	unmatched_albums = (
+		AlbumProfile.objects.filter(status=EnrichmentStatus.NOT_FOUND, album__artist__profile__status=EnrichmentStatus.MATCHED)
+		.select_related("album", "album__artist", "album__artist__profile").order_by(Lower("album__artist__artist_name"), Lower("album__album_name"))
+	)
+	job = enrichment_service.get_job()
+	return render(request, "library/enrichment.html", {
+		"artist_counts": artist_counts,
+		"album_counts": album_counts,
+		"unmatched_artists": unmatched_artists[:300],
+		"doubtful_artists": doubtful_artists[:100],
+		"unmatched_albums": unmatched_albums[:300],
+		"job": job,
+	})
+
+
+@login_required
+@require_POST
+def enrichment_start(request):
+	artist_id = request.POST.get("artist_id")
+	artist_ids = [int(artist_id)] if artist_id and artist_id.isdigit() else None
+	if enrichment_service.start_enrichment(refresh=request.POST.get("refresh") == "1", artist_ids=artist_ids):
+		messages.success(request, "MusicBrainz lookup started.")
+	else:
+		messages.warning(request, "A MusicBrainz lookup is already running.")
+	if artist_ids and request.POST.get("next") == "artist":
+		return redirect("library:artist-detail", artist_id=artist_ids[0])
+	return redirect("library:enrichment")
+
+
+@login_required
+@require_POST
+def enrichment_stop(request):
+	if enrichment_service.stop_enrichment():
+		messages.info(request, "The lookup will stop after the current artist.")
+	return redirect("library:enrichment")
+
+
+@login_required
+@require_POST
+def set_external_id(request, kind, object_id):
+	try:
+		if kind == "artist":
+			artist = get_object_or_404(Artist, pk=object_id)
+			enrichment_api.set_artist_id(artist, request.POST.get("external_id", ""))
+		else:
+			album = get_object_or_404(Album, pk=object_id)
+			artist = album.artist
+			enrichment_api.set_album_id(album, request.POST.get("external_id", ""))
+	except ValueError as error:
+		messages.error(request, str(error))
+		return redirect("library:enrichment")
+	if enrichment_service.start_enrichment(artist_ids=[artist.pk]):
+		messages.success(request, f"MusicBrainz ID saved; looking {artist.artist_name} up again.")
+	else:
+		messages.warning(request, "MusicBrainz ID saved. It will be used on the next lookup (one is running now).")
+	return redirect("library:enrichment")
+
+
+def _facet_chips(links):
+	chips = {}
+	for link in links:
+		facet = link.facet
+		chips.setdefault(facet.kind, {})
+		key = facet.name.casefold()
+		if key not in chips[facet.kind]:
+			chips[facet.kind][key] = {"name": facet.name, "detail": link.detail, "url": facet_url(facet.kind, facet.name)}
+	return {kind: list(values.values()) for kind, values in chips.items()}

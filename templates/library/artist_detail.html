@@ -2,8 +2,32 @@
 {% block title %}{{ artist.artist_name }}{% endblock %}
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:artist-list' %}">Artists</a><span>/</span>{{ artist.artist_name }}</div>
-<section class="page-heading"><div><span class="eyebrow">ARTIST FILE</span><h1>{{ artist.artist_name }}</h1><p class="subheading">{{ albums|length }} albums in this library</p></div></section>
+<section class="page-heading"><div><span class="eyebrow">ARTIST FILE{% if matched and profile.artist_type %} / {{ profile.artist_type|upper }}{% endif %}</span><h1>{{ artist.artist_name }}</h1><p class="subheading">{{ albums|length }} album{{ albums|length|pluralize }} in this library{% if matched and profile.studio_album_count != None %} · {{ profile.studio_album_count }} studio album{{ profile.studio_album_count|pluralize }} released{% endif %}{% if matched and profile.disambiguation %} · {{ profile.disambiguation }}{% endif %}</p></div>
+  <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="artist_id" value="{{ artist.pk }}"><input type="hidden" name="next" value="artist"><button class="button button-light" type="submit" {% if job and job.running %}disabled title="A lookup is running"{% endif %}>{% if profile and profile.status %}Look up again{% else %}Look up online{% endif %}</button></form>
+</section>
+
+{% if matched or country or formed %}<section class="fact-strip" aria-label="Artist facts">
+  {% if country %}<div><span class="eyebrow">COUNTRY</span><a href="{{ country_url }}">{{ country }}</a>{% if matched and profile.begin_area and profile.begin_area != country %}<small>from {{ profile.begin_area }}</small>{% endif %}</div>{% endif %}
+  {% if formed %}<div><span class="eyebrow">{% if matched and profile.artist_type == "Person" %}BORN / ACTIVE FROM{% else %}FORMED{% endif %}</span><strong>{{ formed }}</strong>{% if matched and profile.end_year %}<small>until {{ profile.end_year }}</small>{% endif %}</div>{% endif %}
+  {% if matched and profile.rating != None %}<div><span class="eyebrow">RATING</span><strong>★ {{ profile.rating|floatformat:2 }}</strong><small>{{ profile.rating_votes }} vote{{ profile.rating_votes|pluralize }}</small></div>{% endif %}
+  {% if genres %}<div class="fact-wide"><span class="eyebrow">GENRES</span><div class="tag-chips">{% for genre in genres %}<a class="tag-chip" href="{{ genre.url }}">{{ genre.name }}</a>{% endfor %}</div></div>{% endif %}
+  {% if matched %}<div class="fact-source"><span class="eyebrow">SOURCE</span><a class="link-button" href="https://musicbrainz.org/artist/{{ profile.external_id }}" target="_blank" rel="noreferrer">MusicBrainz ↗</a><small>match {{ profile.match_score }}</small></div>{% endif %}
+</section>{% elif profile and profile.status %}<div class="preview-warning"><strong>{{ profile.get_status_display }}</strong><span>{{ profile.note }} · <a class="link-button" href="{% url 'library:enrichment' %}">Set the MusicBrainz ID by hand</a></span></div>{% endif %}
+
+<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">IN THE LIBRARY</span><h2>Albums</h2></div></div>
 <div class="album-grid">
 {% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.release_year|default:"Year unknown" }}</span><small>{{ album.genre|default:"GENRE UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}
-</div>
+</div></section>
+
+{% if lineup %}<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">PERSONNEL</span><h2>Line-up</h2></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>MEMBER</th><th>PLAYS</th><th>YEARS</th></tr></thead><tbody>
+  {% for member in lineup %}<tr><td><a class="table-primary" href="{{ member.url }}">{{ member.name }}</a>{% if member.original %}<span class="table-secondary">founding member</span>{% endif %}</td><td>{% for instrument in member.instrument_links %}<a class="tag-chip tag-chip-small" href="{{ instrument.url }}">{{ instrument.name }}</a>{% empty %}—{% endfor %}</td><td>{{ member.begin|default:"?" }}–{% if member.current %}present{% else %}{{ member.end|default:"?" }}{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% endif %}
+
+{% if discography %}<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">DISCOGRAPHY / MUSICBRAINZ</span><h2>Studio albums &amp; EPs</h2></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>RELEASED</th><th>TITLE</th><th>TYPE</th><th>RATING</th><th>IN LIBRARY</th></tr></thead><tbody>
+  {% for entry in discography %}<tr><td>{{ entry.date|default:"—" }}</td><td><strong class="table-primary">{{ entry.title }}</strong></td><td>{{ entry.type }}</td><td>{% if entry.rating != None %}★ {{ entry.rating|floatformat:2 }} <span class="muted">({{ entry.votes }})</span>{% else %}—{% endif %}</td><td>{% if entry.album_id %}<a class="link-button" href="{% url 'library:album-detail' entry.album_id %}">Open ↗</a>{% else %}<span class="muted">missing</span>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% endif %}
 {% endblock %}

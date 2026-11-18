@@ -9,3 +9,4 @@ db/metadata_backups/
 /source-test/*
 .DS_Store
 db/tag_write_logs/
+db/musicbrainz_cache/

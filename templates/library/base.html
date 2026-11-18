@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f3f2ed">
   <title>{% block title %}Library{% endblock %} · Versus Library</title>
-  <link rel="stylesheet" href="{% static 'library/library.css' %}?v=2">
+  <link rel="stylesheet" href="{% static 'library/library.css' %}?v=4">
 </head>
 <body>
   <div class="app-frame">
@@ -31,6 +31,7 @@
         <a href="{% url 'library:batch-index' %}" class="{% if 'batch' in request.resolver_match.url_name %}active{% endif %}">Batches</a>
         <a href="{% url 'library:quality-report' %}" class="{% if request.resolver_match.url_name == 'quality-report' or request.resolver_match.url_name == 'edit-tags' %}active{% endif %}">Tag health</a>
         <a href="{% url 'library:browse' %}" class="{% if request.resolver_match.url_name == 'browse' %}active{% endif %}">Browse</a>
+        <a href="{% url 'library:explore' %}" class="{% if request.resolver_match.url_name == 'explore' or request.resolver_match.url_name == 'decade-index' or request.resolver_match.url_name == 'enrichment' %}active{% endif %}">Explore</a>
       </nav>
     {% endif %}
     <main class="page-content">

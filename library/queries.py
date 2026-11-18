@@ -6,7 +6,7 @@ The annotations expose the attribute names the templates already use
 from django.db.models import Avg, Count, F, Q
 from django.db.models.functions import Lower
 
-from .models import Album, Artist, Track
+from .models import Album, AlbumProfile, Artist, ArtistProfile, Track
 
 
 def albums(track_filter=None):
@@ -71,4 +71,6 @@ def dashboard_stats():
         "missing_year_count": Album.objects.filter(album_release_year__isnull=True).count(),
         "missing_genre_count": Album.objects.filter(album_genre="").count(),
         "average_quality": round(average, 2) if average is not None else None,
+        "enriched_artist_count": ArtistProfile.objects.filter(status="matched").count(),
+        "enriched_album_count": AlbumProfile.objects.filter(status="matched").count(),
     }

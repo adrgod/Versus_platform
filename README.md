@@ -1,6 +1,22 @@
 # Jira Board
 https://adrianogodinho-1792274415428.atlassian.net/jira/software/projects/VSP/boards/2?filter=&groupBy=none
 
+# Online enrichment (MusicBrainz)
+
+`python manage.py enrich_library` (or **Explore → Online lookup** in the app) looks artists and albums up on
+[MusicBrainz](https://musicbrainz.org): free, no API key. Per artist it stores genres, country, formation
+year, line-up with instruments and years, discography (studio albums/EPs with release dates) and rating. Per
+album: genres, first release date, release type, rating, studios, producers, engineers, artwork credits,
+album musicians and label. MP3 tags and the tag-derived columns are never changed; online data lives in
+`ArtistProfile`, `AlbumProfile` and the `Facet` link tables, each link recording its source.
+
+- Options: `--refresh` (look everything up again), `--artist NAME` (repeatable), `--no-cache`.
+- Set `enrichment.user_agent` in `config.json` to include your contact (MusicBrainz asks for it).
+- Rate limit: about 1 request/second, so a first run takes ~3–5 s per album. Answers are cached in `db/musicbrainz_cache/`.
+- Wrong or missing matches can be fixed on the Online lookup page by pasting a MusicBrainz link.
+- **Explore** (`/explore/`) filters the library by any combination of tags (OR within a group, AND across
+  groups). **Decades** (`/explore/decades/`) ranks albums per decade (XXX0–XXX9) by rating.
+
 # Steps on the Roadmap
 
 ## PHASE 1 — MUSIC LIBRARY SCANNER

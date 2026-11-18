@@ -1,0 +1,56 @@
+{% extends "library/base.html" %}
+{% block title %}Online lookup{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:explore' %}">Explore</a><span>/</span>Online lookup</div>
+<section class="page-heading"><div><span class="eyebrow">ENRICHMENT / MUSICBRAINZ</span><h1>Online lookup</h1><p class="subheading">Adds genres, country, formation year, line-ups and instruments, studios, producers, engineers, artwork credits, discographies and ratings from <a class="link-button" href="https://musicbrainz.org" rel="noreferrer" target="_blank">MusicBrainz</a>. Your MP3 tags are never changed.</p></div>
+  <div class="heading-actions">
+    {% if job and job.running %}
+      <form method="post" action="{% url 'library:enrichment-stop' %}">{% csrf_token %}<button class="button button-light" type="submit">Stop</button></form>
+    {% else %}
+      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Look up new music</button></form>
+      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again">Refresh everything</button></form>
+    {% endif %}
+  </div>
+</section>
+
+{% if job %}<section class="source-strip enrichment-job">
+  <div class="source-copy"><span class="eyebrow">{% if job.running %}LOOKING UP{% elif job.error %}STOPPED WITH AN ERROR{% else %}LAST RUN{% endif %}</span><strong>{% if job.running %}{{ job.stats.current|default:"Starting…" }}{% elif job.error %}{{ job.error }}{% else %}Finished {{ job.finished|date:"j M Y, H:i" }}{% endif %}</strong></div>
+  <div class="job-meter" role="progressbar" aria-valuemin="0" aria-valuemax="{{ job.stats.artists_total }}" aria-valuenow="{{ job.stats.artists_done }}"><span>{{ job.stats.artists_done }} / {{ job.stats.artists_total }} artists</span><progress max="{{ job.stats.artists_total|default:1 }}" value="{{ job.stats.artists_done }}"></progress></div>
+  <div class="scan-state"><span class="status-dot {% if job.running %}status-scanning{% elif job.error %}status-failed{% endif %}"></span><span>{{ job.stats.artists_matched }} artists · {{ job.stats.albums_matched }} albums matched</span><small>{{ job.stats.artists_not_found }} artists · {{ job.stats.albums_not_found }} albums without a match</small></div>
+</section>
+{% if job.stats.errors %}<details class="scan-errors"><summary>{{ job.stats.errors|length }} lookup error{{ job.stats.errors|length|pluralize }}</summary><pre>{% for error in job.stats.errors %}{{ error }}
+{% endfor %}</pre></details>{% endif %}
+{% if job.running %}<script>setTimeout(function () { location.reload(); }, 3000);</script>{% endif %}
+{% endif %}
+
+<section class="stat-grid" aria-label="Lookup coverage">
+  <article class="stat-cell stat-primary"><span>ARTISTS MATCHED</span><strong>{{ artist_counts.matched }}</strong><small>{{ artist_counts.pending }} not looked up yet</small></article>
+  <article class="stat-cell"><span>ARTISTS WITHOUT MATCH</span><strong>{{ artist_counts.not_found|add:artist_counts.error }}</strong><small>{{ artist_counts.error }} failed lookups</small></article>
+  <article class="stat-cell"><span>ALBUMS MATCHED</span><strong>{{ album_counts.matched }}</strong><small>{{ album_counts.pending }} not looked up yet</small></article>
+  <article class="stat-cell"><span>ALBUMS WITHOUT MATCH</span><strong>{{ album_counts.not_found }}</strong><small>title not in the discography</small></article>
+</section>
+<p class="security-note">MusicBrainz allows about one request a second, so a first run takes roughly 3–5 seconds per album. Answers are cached in <code>db/musicbrainz_cache</code>, so later runs are quick. From a terminal: <code>python manage.py enrich_library</code>.</p>
+
+<section class="genre-section">
+  <div class="section-heading"><div><span class="eyebrow">NEEDS A HAND</span><h2>Artists without a match</h2></div></div>
+  <p class="subheading">Find the artist on MusicBrainz, then paste its page link here. That artist is then looked up again with the ID you gave.</p>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>ARTIST</th><th>WHY</th><th>MUSICBRAINZ LINK OR ID</th></tr></thead><tbody>
+  {% for profile in unmatched_artists %}<tr><td><a class="table-primary" href="{% url 'library:artist-detail' profile.artist_id %}">{{ profile.artist.artist_name }}</a><a class="table-secondary link-button" href="https://musicbrainz.org/search?type=artist&amp;query={{ profile.artist.artist_name|urlencode }}" target="_blank" rel="noreferrer">Search MusicBrainz ↗</a></td><td>{{ profile.note|default:profile.get_status_display }}</td><td><form class="id-form" method="post" action="{% url 'library:set-external-id' 'artist' profile.artist_id %}">{% csrf_token %}<input name="external_id" placeholder="https://musicbrainz.org/artist/…" aria-label="MusicBrainz artist link for {{ profile.artist.artist_name }}" required><button class="button button-dark" type="submit">Use</button></form></td></tr>{% empty %}<tr><td colspan="3" class="empty-cell">Every looked-up artist was matched.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{% if doubtful_artists %}<section class="genre-section">
+  <div class="section-heading"><div><span class="eyebrow">WORTH A CHECK</span><h2>Uncertain artist matches</h2></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>ARTIST</th><th>MATCHED TO</th><th>SCORE</th><th>CORRECT IT</th></tr></thead><tbody>
+  {% for profile in doubtful_artists %}<tr><td><a class="table-primary" href="{% url 'library:artist-detail' profile.artist_id %}">{{ profile.artist.artist_name }}</a><span class="table-secondary">{{ profile.note }}</span></td><td><a class="link-button" href="https://musicbrainz.org/artist/{{ profile.external_id }}" target="_blank" rel="noreferrer">{{ profile.name }}{% if profile.disambiguation %} ({{ profile.disambiguation }}){% endif %} ↗</a></td><td>{{ profile.match_score }}</td><td><form class="id-form" method="post" action="{% url 'library:set-external-id' 'artist' profile.artist_id %}">{% csrf_token %}<input name="external_id" placeholder="MusicBrainz artist link" aria-label="Correct MusicBrainz artist for {{ profile.artist.artist_name }}" required><button class="button button-dark" type="submit">Use</button></form></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% endif %}
+
+<section class="genre-section">
+  <div class="section-heading"><div><span class="eyebrow">NEEDS A HAND</span><h2>Albums without a match</h2></div></div>
+  <p class="subheading">The artist was found but this title is not in its MusicBrainz discography. Paste the release-group link (musicbrainz.org/release-group/…).</p>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>ALBUM</th><th>ARTIST</th><th>MUSICBRAINZ RELEASE GROUP</th></tr></thead><tbody>
+  {% for profile in unmatched_albums %}<tr><td><a class="table-primary" href="{% url 'library:album-detail' profile.album_id %}">{{ profile.album.album_name }}</a></td><td><a class="link-button" href="https://musicbrainz.org/artist/{{ profile.album.artist.profile.external_id }}/releases" target="_blank" rel="noreferrer">{{ profile.album.artist.artist_name }} discography ↗</a></td><td><form class="id-form" method="post" action="{% url 'library:set-external-id' 'album' profile.album_id %}">{% csrf_token %}<input name="external_id" placeholder="https://musicbrainz.org/release-group/…" aria-label="MusicBrainz release group for {{ profile.album.album_name }}" required><button class="button button-dark" type="submit">Use</button></form></td></tr>{% empty %}<tr><td colspan="3" class="empty-cell">Every album of a matched artist was found.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

@@ -3,5 +3,9 @@
     "file_attributes" : ["album", "length", "mood", "title", "artist", "albumartist", "discnumber", "tracknumber", "language", "genre", "date", "originaldate", "album_cover", "publisher", "artist_country", "artist_formed_year", "artist_photo"],
     "quality_attributes" : ["album", "title", "artist", "tracknumber", "genre", "date"],
     "name_fields" : ["artist", "album", "albumartist", "title"],
-    "allowed_library_roots": ["/"]
+    "allowed_library_roots": ["/"],
+    "enrichment": {
+        "user_agent": "VersusLibrary/0.1 ( replace-with-your-email-or-project-url )",
+        "cache_days": 30
+    }
 }
