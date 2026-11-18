@@ -1,0 +1,10 @@
+{% extends "library/base.html" %}
+{% block title %}Batch {{ batch_date|date:"j M Y" }}{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:batch-index' %}">Batches</a><span>/</span>{{ batch_date|date:"j M Y" }}</div>
+<section class="page-heading"><div><span class="eyebrow">BATCH / {{ day }}</span><h1>{{ batch_date|date:"j M Y" }}</h1><p class="subheading">{{ artist_count }} artist{{ artist_count|pluralize }} · {{ albums|length }} album{{ albums|length|pluralize }}</p></div>
+<div class="preview-actions"><a class="button button-primary" href="{% url 'library:batch-preview' day %}">Preview file updates</a>{% if job %}<a class="button button-light" href="{% url 'library:batch-status' day %}">Last file update{% if job.running %} (running){% endif %}</a>{% endif %}</div></section>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>ALBUM</th><th>ARTIST</th><th>PUBLISHER</th><th>YEAR</th><th>TRACKS</th><th>LAST UPDATED</th></tr></thead><tbody>
+{% for album in albums %}<tr><td><a class="table-primary" href="{% url 'library:album-detail' album.album_id %}">{{ album.album_name }}</a></td><td>{{ album.artist_name }}</td><td>{{ album.album_publisher|default:"—" }}</td><td>{{ album.release_year|default:"—" }}</td><td>{{ album.track_count }}</td><td>{{ album.when_updated|date:"j M Y, H:i" }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

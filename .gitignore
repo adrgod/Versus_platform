@@ -8,3 +8,4 @@ db/metadata_backups/
 .venv
 /source-test/*
 .DS_Store
+db/tag_write_logs/

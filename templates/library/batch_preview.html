@@ -1,0 +1,17 @@
+{% extends "library/base.html" %}
+{% block title %}Review file updates{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:batch-index' %}">Batches</a><span>/</span><a href="{% url 'library:batch-detail' day %}">{{ batch_date|date:"j M Y" }}</a><span>/</span>Preview</div>
+<section class="page-heading"><div><span class="eyebrow">BATCH / FILE UPDATES</span><h1>Review file updates</h1><p class="subheading">{{ changed_count }} of {{ file_count }} file{{ file_count|pluralize }} would change. Only empty tags are filled, and only for files in the YYYYMMDD/PUBLISHER/BAND/ALBUM layout.</p></div></section>
+{% if counts %}<div class="detail-meta">{% for name, count in counts %}<span>{{ name|upper }} · {{ count }}</span>{% endfor %}</div>{% endif %}
+{% if errors %}<div class="preview-warning"><strong>{{ errors|length }} file{{ errors|length|pluralize }} could not be read</strong><span>{{ errors|join:" · " }}</span></div>{% endif %}
+{% if rows %}
+<div class="table-wrap"><table class="data-table"><thead><tr><th>FILE</th><th>WILL BE WRITTEN</th></tr></thead><tbody>
+{% for row in rows %}<tr><td class="table-primary">{{ row.path }}</td><td>{% for change in row.changes %}<div><strong>{{ change.field|title }}</strong>: {{ change.value }}</div>{% endfor %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if more_rows %}<p class="subheading">… and {{ more_rows }} more file{{ more_rows|pluralize }}.</p>{% endif %}
+<div class="preview-warning"><strong>No backup file is kept</strong><span>Each file's original tags are held in memory while it is written, and put back automatically if the result does not verify. A small CSV log of what was written is saved.</span></div>
+<div class="preview-actions"><a class="button button-light" href="{% url 'library:batch-detail' day %}">Go back</a>
+<form method="post" action="{% url 'library:batch-write' day %}">{% csrf_token %}<button class="button button-primary" type="submit"{% if running %} disabled{% endif %}>Write to {{ changed_count }} file{{ changed_count|pluralize }}</button></form></div>
+{% else %}<div class="empty-state"><span class="complete-tag">No changes</span><h3>Tags already match</h3><p>No file will be written.</p><a class="button button-light" href="{% url 'library:batch-detail' day %}">Back to the batch</a></div>{% endif %}
+{% endblock %}

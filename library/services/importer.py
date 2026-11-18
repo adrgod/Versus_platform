@@ -134,6 +134,7 @@ def _import_record(record, model_name, stats, on_skip):
         Track,
         identity={
             "album": album,
+            "track_discnumber": clean_int(record.get("discnumber")) or 1,
             "track_title": track_title,
             "track_number": clean_int(record.get("tracknumber")),
             "track_duration": clean_decimal(record.get("length") or record.get("track_duration")),

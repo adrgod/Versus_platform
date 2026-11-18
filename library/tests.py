@@ -210,18 +210,16 @@ class LibraryWorkflowTests(TestCase):
 
         return current_values, FakeEasyID3
 
-    def test_tag_preview_requires_confirmation_and_confirmed_write_is_backed_up(self):
+    def test_tag_preview_requires_confirmation_and_confirmed_write_keeps_no_backup_file(self):
         track = Track.objects.get()
         current_values, fake_easyid3 = self.tag_edit_setup()
         proposed_values = {**current_values, "title": "New Track"}
-        backup_directory = Path(self.temp_directory.name) / "backups"
 
         with (
             patch.object(views, "EasyID3", fake_easyid3),
             patch.object(views, "read_file_metadata", return_value=self.record(title="New Track")),
             patch.object(views, "read_artwork_from_id3", return_value=None),
             patch.object(views, "calculate_confidence_for_track", return_value=0.9),
-            patch.object(repository, "get_backup_directory", return_value=backup_directory),
         ):
             original_file = self.track_path.read_bytes()
             preview = self.client.post(reverse("library:edit-tags", args=(track.pk,)), proposed_values)
@@ -229,7 +227,6 @@ class LibraryWorkflowTests(TestCase):
             self.assertContains(preview, "Test Track")
             self.assertContains(preview, "New Track")
             self.assertEqual(self.track_path.read_bytes(), original_file)
-            self.assertFalse(backup_directory.exists())
 
             response = self.client.post(
                 reverse("library:confirm-tag-edit", args=(track.pk,)),
@@ -237,21 +234,19 @@ class LibraryWorkflowTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(list(backup_directory.glob("track-*.mp3")))
+        self.assertFalse(list(self.root.glob("**/*.bak")))
         self.assertEqual(Track.objects.get().track_title, "New Track")
         self.assertEqual((Artist.objects.count(), Album.objects.count()), (1, 1))
 
     def test_confirmed_edit_that_cannot_be_stored_restores_the_file_and_keeps_the_track(self):
         track = Track.objects.get()
         current_values, fake_easyid3 = self.tag_edit_setup()
-        backup_directory = Path(self.temp_directory.name) / "backups"
 
         with (
             patch.object(views, "EasyID3", fake_easyid3),
             patch.object(views, "read_file_metadata", return_value=self.record(title="")),
             patch.object(views, "read_artwork_from_id3", return_value=None),
             patch.object(views, "calculate_confidence_for_track", return_value=0.9),
-            patch.object(repository, "get_backup_directory", return_value=backup_directory),
         ):
             original_file = self.track_path.read_bytes()
             preview = self.client.post(

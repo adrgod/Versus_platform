@@ -41,6 +41,7 @@ class Album(models.Model):
 class Track(models.Model):
     album = models.ForeignKey(Album, on_delete=models.CASCADE)
     track_title = models.CharField(max_length=200, blank=False)
+    track_discnumber = models.IntegerField(default=1)
     track_number = models.IntegerField(null=True, blank=True)
     track_duration = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
     track_dq_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
@@ -51,7 +52,7 @@ class Track(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields= ["album", "track_title", "track_number", "track_duration"],
+                fields= ["album", "track_discnumber", "track_title", "track_number", "track_duration"],
                 name="unique_track_title_number_duration_per_album",
             ),
         ]

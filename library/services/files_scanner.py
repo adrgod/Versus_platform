@@ -15,6 +15,10 @@ import pandas as pd
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
+# EasyID3 has no "publisher" key by default; it is the TPUB frame.
+EasyID3.RegisterTextKey("publisher", "TPUB")
+
+
 def format_name(name):
     if not name:
         return ""
@@ -88,6 +92,63 @@ def album_folder(file_path):
     return Path(*path.parts[: index + 4]) if index is not None else path.parent
 
 
+DISC_FOLDER = re.compile(r"^(?:cd|dis[ck])[\s._-]*0*(\d{1,2})(?!\d)", re.IGNORECASE)
+
+
+def disc_from_path(file_path):
+    """Disc number from a folder such as CD2, Disc 02 or disk-3 between the album folder and the file.
+
+    Returns None when there is no such folder (the deepest one wins).
+    """
+    path = Path(file_path)
+    album = album_folder(path)
+    try:
+        names = path.parent.relative_to(album).parts if album != path.parent else ()
+    except ValueError:
+        names = ()
+    if not names and _batch_index(path.parts) is None:
+        names = (path.parent.name,)
+    for name in reversed(names):
+        match = DISC_FOLDER.match(name.strip())
+        if match and int(match.group(1)) > 0:
+            return int(match.group(1))
+    return None
+
+
+TRACK_FILENAME = re.compile(r"^\s*(\d{1,3})\s*[-._]\s*(\S.*?)\s*$")
+
+
+def parse_track_filename(file_path):
+    """(track number, title) from '01 - Track Name.mp3' or '01_Track_Name.mp3'; (None, '') otherwise."""
+    match = TRACK_FILENAME.match(Path(file_path).stem)
+    if not match or int(match.group(1)) == 0:
+        return None, ""
+    title = " ".join(match.group(2).replace("_", " ").split())
+    return int(match.group(1)), title
+
+
+def derived_tags(file_path):
+    """Tag values the path implies; empty unless it follows ``YYYYMMDD/PUBLISHER/BAND/ALBUM/...``."""
+    path = Path(file_path)
+    parts = path.parts
+    index = _batch_index(parts)
+    if index is None:
+        return {}
+    values = {
+        "publisher": parts[index + 1].strip(),
+        "artist": parts[index + 2].strip(),
+        "album": parts[index + 3].strip(),
+    }
+    number, title = parse_track_filename(path)
+    if number is not None:
+        values["tracknumber"] = str(number)
+        values["title"] = title
+    disc = disc_from_path(path)
+    if disc is not None:
+        values["discnumber"] = str(disc)
+    return values
+
+
 def find_cover_image(file_path, album, artist, cache=None):
     """Compressed cover from an image file inside the album folder (any depth).
 
@@ -154,7 +215,10 @@ def parse_batch_path(file_path):
 
 
 def read_file_metadata(file_path, config, image_cache=None):
-    file_info = EasyID3(file_path)
+    try:
+        file_info = EasyID3(file_path)
+    except ID3NoHeaderError:
+        file_info = {}  # no tags at all: everything is empty and can be filled from the path
     audio_info = MP3(file_path).info
     file_data: dict[str, str | bytes | None] = {
         "file_path": str(file_path)
@@ -183,17 +247,24 @@ def read_file_metadata(file_path, config, image_cache=None):
         if att == "tracknumber":
             file_data[att] = clean_tracknumber(file_data[att])
 
+    # A CD2 / Disc 2 folder is explicit, so it beats the tag (often left at 1).
+    folder_disc = disc_from_path(file_path)
+    if folder_disc is not None:
+        file_data["discnumber"] = str(folder_disc)
+
+    # Empty tags are filled from the folder layout / file name (same rules as the file writer).
+    derived = derived_tags(file_path)
+    for name in ("artist", "album", "title", "tracknumber", "publisher"):
+        if derived.get(name) and not str(file_data.get(name) or "").strip():
+            file_data[name] = format_name(derived[name]) if name in name_fields else derived[name]
+
     # The embedded cover leads; otherwise look for an image file in the album folder.
     if "album_cover" in file_attributes and not file_data.get("album_cover"):
         file_data["album_cover"] = find_cover_image(
             file_path, file_data.get("album", ""), file_data.get("artist", ""), image_cache
         )
 
-    # The tag leads; the folder name only fills a missing publisher.
-    batch_date, folder_publisher = parse_batch_path(file_path)
-    file_data["batch_date"] = batch_date
-    if not str(file_data.get("publisher") or "").strip():
-        file_data["publisher"] = folder_publisher
+    file_data["batch_date"] = parse_batch_path(file_path)[0]
 
     return file_data
 
@@ -268,7 +339,7 @@ def classify_release_length(tracks):
 
     df["length"] = pd.to_numeric(df["length"], errors="coerce").fillna(0)
 
-    album_fields = ["artist", "album", "discnumber", "date"]
+    album_fields = ["artist", "album", "date"]  # all discs together
     df["album_length"] = df.groupby(album_fields)["length"].transform("sum")
 
     df["album_length_class"] = (

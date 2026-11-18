@@ -1,7 +1,7 @@
 import mimetypes
 import re
 import shutil
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 
@@ -19,7 +19,7 @@ from django.views.decorators.http import require_GET, require_POST
 from mutagen.easyid3 import EasyID3
 
 from . import queries, repository
-from .models import Artist, LibraryState, Track
+from .models import Album, Artist, LibraryState, Track
 from .scan_service import start_scan
 from .services.files_scanner import (
 	calculate_confidence_for_track,
@@ -27,6 +27,7 @@ from .services.files_scanner import (
 	read_file_metadata,
 )
 from .services.importer import import_records, prune_empty
+from .services.tag_writer import TagSnapshot, batch_files, get_job, plan_file, start_batch_write
 
 
 def _with_covers(albums):
@@ -320,8 +321,9 @@ def album_detail(request, album_id):
 	album = get_object_or_404(queries.albums(), pk=album_id)
 	album.cover_uri = repository.album_cover_data_uri(album.album_cover)
 	tracks = list(
-		queries.tracks().filter(album_id=album_id).order_by("track_number", Lower("track_title"))
+		queries.tracks().filter(album_id=album_id).order_by("track_discnumber", "track_number", Lower("track_title"))
 	)
+	multi_disc = len({track.track_discnumber for track in tracks}) > 1
 	playable_tracks = [
 		{
 			"url": reverse("library:stream-track", args=(track.track_id,)),
@@ -334,6 +336,7 @@ def album_detail(request, album_id):
 	return render(request, "library/album_detail.html", {
 		"album": album,
 		"tracks": tracks,
+		"multi_disc": multi_disc,
 		"player_tracks": playable_tracks,
 	})
 
@@ -523,10 +526,7 @@ def confirm_tag_edit(request, track_id):
 		return redirect("library:edit-tags", track_id=track_id)
 
 	fields = _tag_fields()
-	backup_folder = repository.get_backup_directory()
-	backup_folder.mkdir(parents=True, exist_ok=True)
-	backup_path = backup_folder / f"track-{track_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.mp3"
-	shutil.copy2(path, backup_path)
+	snapshot = TagSnapshot(path)  # original tag block, in memory only
 
 	try:
 		tags = EasyID3(path)
@@ -556,9 +556,99 @@ def confirm_tag_edit(request, track_id):
 				raise ValueError("Artist, album and title cannot be empty; the original file will be restored.")
 			prune_empty()
 	except Exception as error:
-		shutil.copy2(backup_path, path)
-		messages.error(request, f"Could not save tags; original file restored from backup: {error}")
+		snapshot.restore()
+		messages.error(request, f"Could not save tags; the original tags were put back: {error}")
 		return redirect("library:edit-tags", track_id=track_id)
 
-	messages.success(request, f"Tags saved and verified. Backup: {backup_path.name}")
+	messages.success(request, "Tags saved and verified.")
 	return redirect("library:album-list")
+
+
+
+def _parse_batch_day(day):
+	try:
+		return datetime.strptime(day, "%Y%m%d").date()
+	except ValueError:
+		raise Http404("Unknown batch") from None
+
+
+@login_required
+def batch_index(request):
+	batches = (
+		Album.objects.filter(album_batch_date__isnull=False)
+		.values("album_batch_date")
+		.annotate(
+			album_count=Count("id", distinct=True),
+			artist_count=Count("artist", distinct=True),
+			track_count=Count("track"),
+		)
+		.order_by("-album_batch_date")
+	)
+	return render(request, "library/batch_index.html", {"batches": batches})
+
+
+@login_required
+def batch_detail(request, day):
+	batch_date = _parse_batch_day(day)
+	albums = queries.albums().filter(album_batch_date=batch_date).order_by(*queries.album_order())
+	if not albums:
+		raise Http404("Unknown batch")
+	return render(request, "library/batch_detail.html", {
+		"day": day,
+		"batch_date": batch_date,
+		"albums": albums,
+		"artist_count": len({album.artist_id for album in albums}),
+		"job": get_job(batch_date),
+	})
+
+
+@login_required
+def batch_preview(request, day):
+	batch_date = _parse_batch_day(day)
+	image_cache = {}
+	rows, errors, counts = [], [], {}
+	files = batch_files(batch_date)
+	for path in files:
+		try:
+			plan = plan_file(path, image_cache)
+		except Exception as error:
+			errors.append(f"{path}: {error}")
+			continue
+		if plan is None or plan.is_empty:
+			continue
+		for name in plan.changes:
+			counts[name] = counts.get(name, 0) + 1
+		if plan.cover:
+			counts["cover"] = counts.get("cover", 0) + 1
+		rows.append({
+			"path": path,
+			"changes": [{"field": name, "value": value} for name, value in plan.changes.items()]
+			+ ([{"field": "cover", "value": "image from the album folder"}] if plan.cover else []),
+		})
+	return render(request, "library/batch_preview.html", {
+		"day": day,
+		"batch_date": batch_date,
+		"file_count": len(files),
+		"rows": rows[:200],
+		"more_rows": max(len(rows) - 200, 0),
+		"changed_count": len(rows),
+		"counts": sorted(counts.items()),
+		"errors": errors[:30],
+		"running": bool(get_job(batch_date) and get_job(batch_date).running),
+	})
+
+
+@login_required
+@require_POST
+def batch_write(request, day):
+	batch_date = _parse_batch_day(day)
+	if not start_batch_write(batch_date):
+		messages.warning(request, "This batch is already being written.")
+	return redirect("library:batch-status", day=day)
+
+
+@login_required
+def batch_status(request, day):
+	batch_date = _parse_batch_day(day)
+	job = get_job(batch_date)
+	return render(request, "library/batch_status.html", {"day": day, "batch_date": batch_date, "job": job})

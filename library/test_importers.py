@@ -233,3 +233,57 @@ class FolderCoverTests(TestCase):
                 patch.object(files_scanner, "read_artwork_from_id3", return_value=None):
             record = files_scanner.read_file_metadata(self.track, config)
         self.assertTrue(record["album_cover"])
+
+
+class DiscNumberTests(TestCase):
+    def test_disc_from_folder_names(self):
+        from library.services.files_scanner import disc_from_path
+
+        base = "/data/20240315/Label/Band/Album"
+        self.assertEqual(disc_from_path(f"{base}/CD2/01.mp3"), 2)
+        self.assertEqual(disc_from_path(f"{base}/mp3s/Disc 03/01.mp3"), 3)
+        self.assertEqual(disc_from_path(f"{base}/disk-01/01.mp3"), 1)
+        self.assertEqual(disc_from_path(f"{base}/cd2 - bonus/01.mp3"), 2)
+        self.assertIsNone(disc_from_path(f"{base}/mp3s/01.mp3"))
+        self.assertIsNone(disc_from_path(f"{base}/01.mp3"))
+        self.assertIsNone(disc_from_path(f"{base}/Cdrom stuff/01.mp3"))
+        self.assertEqual(disc_from_path("/loose/CD2/01.mp3"), 2)
+
+    def test_folder_beats_tag_and_default_is_one(self):
+        from unittest.mock import MagicMock
+        from library.services import files_scanner
+
+        config = {"file_attributes": ["discnumber", "title"], "name_fields": []}
+        cases = (
+            ("/d/20240315/L/B/A/CD2/01.mp3", {"discnumber": ["1/2"]}, "2"),
+            ("/d/20240315/L/B/A/01.mp3", {"discnumber": ["2/2"]}, "2/2"),
+            ("/d/20240315/L/B/A/01.mp3", {}, ""),
+        )
+        for path, tags, expected in cases:
+            with patch.object(files_scanner, "EasyID3", return_value={"title": ["S"], **tags}), \
+                    patch.object(files_scanner, "MP3", return_value=MagicMock()):
+                self.assertEqual(files_scanner.read_file_metadata(path, config)["discnumber"], expected)
+
+    def test_two_discs_share_one_album_with_their_own_disc_numbers(self):
+        from library.services.importer import import_records
+
+        import_records([
+            make_record(file_path="/m/a1.mp3", discnumber="1", title="Intro", tracknumber="1"),
+            make_record(file_path="/m/a2.mp3", discnumber="2", title="Intro", tracknumber="1"),
+            make_record(file_path="/m/a3.mp3", discnumber="", title="Other", tracknumber="2"),
+        ])
+        self.assertEqual(Album.objects.count(), 1)
+        self.assertEqual(
+            sorted(Track.objects.values_list("track_discnumber", "track_title")),
+            [(1, "Intro"), (1, "Other"), (2, "Intro")],
+        )
+
+    def test_album_length_class_ignores_disc_split(self):
+        from library.services.files_scanner import classify_release_length
+
+        base = {"artist": "A", "album": "B", "date": "2000"}
+        tracks = [
+            {**base, "discnumber": "1", "length": 1000},
+            {**base, "discnumber": "2", "length": 1000},
+        ]
+        self.assertEqual({t["album_length_class"] for t in classify_release_length(tracks)}, {"LP"})

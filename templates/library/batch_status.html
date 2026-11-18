@@ -1,0 +1,13 @@
+{% extends "library/base.html" %}
+{% block title %}File update{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:batch-index' %}">Batches</a><span>/</span><a href="{% url 'library:batch-detail' day %}">{{ batch_date|date:"j M Y" }}</a><span>/</span>File update</div>
+{% if not job %}<div class="empty-state"><h3>No file update has run for this batch</h3><a class="button button-light" href="{% url 'library:batch-preview' day %}">Preview file updates</a></div>
+{% else %}
+<section class="page-heading"><div><span class="eyebrow">BATCH / FILE UPDATE</span><h1>{% if job.running %}Writing tags…{% elif job.error %}Stopped{% else %}Finished{% endif %}</h1><p class="subheading">{{ job.done }} of {{ job.total }} file{{ job.total|pluralize }} checked · {{ job.written }} written · {{ job.unchanged }} already matching · {{ job.covers }} cover{{ job.covers|pluralize }} embedded · {{ job.failed|length }} failed</p></div></section>
+{% if job.error %}<div class="preview-warning"><strong>Error</strong><span>{{ job.error }}</span></div>{% endif %}
+{% if job.failed %}<div class="preview-warning"><strong>Failed files (their original tags were put back)</strong><span>{{ job.failed|join:" · " }}</span></div>{% endif %}
+{% if job.log_path %}<p class="subheading">Log of what was written: <code>{{ job.log_path }}</code></p>{% endif %}
+{% if job.running %}<script>setTimeout(function () { location.reload(); }, 2000);</script>{% endif %}
+{% endif %}
+{% endblock %}

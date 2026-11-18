@@ -1,0 +1,9 @@
+{% extends "library/base.html" %}
+{% block title %}Batches{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">LIBRARY / BATCHES</span><h1>Batches</h1><p class="subheading">{{ batches|length }} batch{{ batches|length|pluralize:"es" }} received, from the YYYYMMDD folder names.</p></div></section>
+<section class="loaded-date-list">
+  <div class="loaded-date-header"><span>BATCH</span><span>LIBRARY CONTENT</span><span></span></div>
+  {% for batch in batches %}<a class="loaded-date-row" href="{% url 'library:batch-detail' batch.album_batch_date|date:'Ymd' %}"><time datetime="{{ batch.album_batch_date|date:'Y-m-d' }}">{{ batch.album_batch_date|date:"j M Y" }}</time><span>{{ batch.artist_count }} ARTIST{{ batch.artist_count|pluralize }} <i>/</i> {{ batch.album_count }} ALBUM{{ batch.album_count|pluralize }} <i>/</i> {{ batch.track_count }} TRACK{{ batch.track_count|pluralize }}</span><b>↗</b></a>{% empty %}<div class="empty-state"><h3>No batches yet</h3><p>Batches appear after a scan of files stored as YYYYMMDD/PUBLISHER/BAND/ALBUM.</p></div>{% endfor %}
+</section>
+{% endblock %}

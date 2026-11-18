@@ -28,6 +28,7 @@
         <a href="{% url 'library:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Overview</a>
         <a href="{% url 'library:album-list' %}" class="{% if 'album' in request.resolver_match.url_name %}active{% endif %}">Albums</a>
         <a href="{% url 'library:artist-list' %}" class="{% if 'artist' in request.resolver_match.url_name %}active{% endif %}">Artists</a>
+        <a href="{% url 'library:batch-index' %}" class="{% if 'batch' in request.resolver_match.url_name %}active{% endif %}">Batches</a>
         <a href="{% url 'library:quality-report' %}" class="{% if request.resolver_match.url_name == 'quality-report' or request.resolver_match.url_name == 'edit-tags' %}active{% endif %}">Tag health</a>
         <a href="{% url 'library:browse' %}" class="{% if request.resolver_match.url_name == 'browse' %}active{% endif %}">Browse</a>
       </nav>

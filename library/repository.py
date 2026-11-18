@@ -17,8 +17,8 @@ def default_source_folder():
     return Path(get_config()["source_data_folder"]).expanduser().resolve()
 
 
-def get_backup_directory():
-    return PROJECT_ROOT / "db" / "metadata_backups"
+def get_log_directory():
+    return PROJECT_ROOT / "db" / "tag_write_logs"
 
 
 def get_allowed_roots():
