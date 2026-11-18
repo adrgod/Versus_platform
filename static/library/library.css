@@ -453,3 +453,30 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .fact-strip { gap: 14px 24px; padding: 14px; }
   .id-form { min-width: 220px; }
 }
+
+/* ---- Liner notes, lyrics, band history ---- */
+.insight-section { margin-top: 34px; }
+.insight-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px 34px; padding: 18px 20px; border-top: 1px solid var(--ink); background: rgba(251, 252, 248, .6); }
+.insight-summary { margin: 0; font: 400 17px/1.55 var(--serif); }
+.insight-tags { display: grid; gap: 10px; align-content: start; }
+.insight-tags .tag-chips { margin: 5px 0 0; }
+.tag-chip-mood { border-color: var(--moss); color: var(--moss); }
+.chip-label { align-self: center; margin-right: 4px; }
+.history-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line-dark); }
+.history-list li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 16px; padding: 13px 10px; border-bottom: 1px solid var(--line); }
+.history-year { color: var(--signal-dark); font: 600 17px/1.2 var(--serif); }
+.history-list strong { display: block; font-size: 13px; }
+.history-list small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.history-list small a { color: var(--signal-dark); font-weight: 700; }
+.history-list blockquote { margin: 6px 0 0; padding-left: 10px; border-left: 2px solid var(--line-dark); color: var(--muted); font: italic 13px/1.45 var(--serif); }
+.text-panels { display: grid; gap: 6px; }
+.text-panel { border: 1px solid var(--line); background: rgba(251, 252, 248, .6); }
+.text-panel summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 11px 14px; cursor: pointer; }
+.text-panel summary strong { font-size: 12px; }
+.text-panel summary small { color: var(--muted); font-size: 10px; }
+.text-panel pre { max-height: 480px; margin: 0; padding: 4px 16px 16px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 14px/1.6 var(--serif); }
+.ollama-strip { margin: 14px 0; }
+@media (max-width: 620px) {
+  .insight-grid { grid-template-columns: 1fr; padding: 14px; }
+  .history-list li { grid-template-columns: 70px minmax(0, 1fr); gap: 10px; }
+}

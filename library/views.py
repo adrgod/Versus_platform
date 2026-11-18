@@ -12,8 +12,8 @@ from django.contrib.auth.decorators import login_required
 from django.core import signing
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, F, Q
-from django.db.models.functions import Coalesce, Lower, TruncDate
+from django.db.models import Count, F, IntegerField, Q, Value
+from django.db.models.functions import Cast, Coalesce, Lower, NullIf, Substr, TruncDate
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -23,7 +23,7 @@ from mutagen.easyid3 import EasyID3
 
 from . import enrichment_service, queries, repository
 from .models import (
-	Album, AlbumFacet, AlbumProfile, Artist, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
+	Album, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
 )
 from .scan_service import start_scan
 from .services.files_scanner import (
@@ -33,6 +33,8 @@ from .services.files_scanner import (
 )
 from .services import enrichment as enrichment_api
 from .services import explorer
+from .services import insights as insights_api
+from .services.ollama import OllamaClient
 from .services.importer import import_records, prune_empty
 from .services.tag_writer import TagSnapshot, batch_files, get_job, plan_file, start_batch_write
 
@@ -340,7 +342,11 @@ def artist_detail(request, artist_id):
 		"country": country,
 		"country_url": facet_url("country", country) if country else None,
 		"formed": (profile.begin_year if matched else None) or artist.artist_formed_year,
-		"job": enrichment_service.get_job(),
+		"job": enrichment_service.running_job(),
+		"history": [
+			{**event, "cause_url": facet_url(FacetKind.CAUSE, event["cause_label"]) if event["cause_label"] else None}
+			for event in insights_api.artist_history(artist)
+		],
 	})
 
 
@@ -391,8 +397,16 @@ def album_detail(request, album_id):
 			]
 			if entries:
 				credit_groups.append({"label": label, "entries": entries})
-	year = album.album_release_year or (profile.release_year if matched else None)
+	insight = AlbumInsight.objects.filter(album_id=album_id).first()
+	insight_year = int(insight.release_date[:4]) if insight and insight.release_date[:4].isdigit() else None
+	year = album.album_release_year or (profile.release_year if matched else None) or insight_year
 	decade = explorer.decade_label(year)
+	lyrics_by_track = {item.track_id: item for item in TrackLyrics.objects.filter(track__album_id=album_id)}
+	lyric_tracks = [
+		{"track": track, "lyrics": lyrics_by_track[track.track_id]}
+		for track in tracks
+		if track.track_id in lyrics_by_track and (lyrics_by_track[track.track_id].text or lyrics_by_track[track.track_id].instrumental)
+	]
 	return render(request, "library/album_detail.html", {
 		"album": album,
 		"tracks": tracks,
@@ -405,6 +419,18 @@ def album_detail(request, album_id):
 		"year": year,
 		"decade": decade,
 		"decade_url": facet_url("decade", decade) if decade else None,
+		"insight": insight,
+		"insight_ready": insight is not None and insight.status == EnrichmentStatus.MATCHED,
+		"events": [
+			{**event, "label": insights_api.EVENT_TYPES.get(event["type"], ""), "cause_label": insights_api.CAUSES.get(event.get("cause"), "")}
+			for event in (insight.events if insight else [])
+		],
+		"keywords": chips.get(FacetKind.KEYWORD, []),
+		"moods": chips.get(FacetKind.MOOD, []),
+		"lyric_themes": chips.get(FacetKind.LYRIC_THEME, []),
+		"documents": AlbumDocument.objects.filter(album_id=album_id).order_by("file_path"),
+		"lyric_tracks": lyric_tracks,
+		"job": enrichment_service.running_job(),
 	})
 
 
@@ -750,7 +776,11 @@ def _enriched_albums(queryset):
 	return queryset.annotate(
 		rating=F("profile__rating"),
 		rating_votes=F("profile__rating_votes"),
-		sort_year=Coalesce("album_release_year", "profile__release_year"),
+		sort_year=Coalesce(
+			"album_release_year",
+			"profile__release_year",
+			Cast(NullIf(Substr("insight__release_date", 1, 4), Value("")), IntegerField()),
+		),
 	)
 
 
@@ -869,14 +899,25 @@ def enrichment_status(request):
 		AlbumProfile.objects.filter(status=EnrichmentStatus.NOT_FOUND, album__artist__profile__status=EnrichmentStatus.MATCHED)
 		.select_related("album", "album__artist", "album__artist__profile").order_by(Lower("album__artist__artist_name"), Lower("album__album_name"))
 	)
-	job = enrichment_service.get_job()
+	ollama = OllamaClient()
 	return render(request, "library/enrichment.html", {
 		"artist_counts": artist_counts,
 		"album_counts": album_counts,
 		"unmatched_artists": unmatched_artists[:300],
 		"doubtful_artists": doubtful_artists[:100],
 		"unmatched_albums": unmatched_albums[:300],
-		"job": job,
+		"job": enrichment_service.get_job("musicbrainz"),
+		"notes_job": enrichment_service.get_job("notes"),
+		"running": enrichment_service.running_job(),
+		"notes_counts": {
+			"albums": Album.objects.count(),
+			"with_notes": Album.objects.filter(documents__isnull=False).distinct().count(),
+			"tracks": Track.objects.count(),
+			"with_lyrics": TrackLyrics.objects.filter(status=EnrichmentStatus.MATCHED).count(),
+			"extracted": AlbumInsight.objects.filter(status=EnrichmentStatus.MATCHED).count(),
+			"failed": AlbumInsight.objects.filter(status=EnrichmentStatus.ERROR).count(),
+		},
+		"ollama": {**ollama.status(), "url": ollama.url, "model": ollama.model},
 	})
 
 
@@ -888,7 +929,7 @@ def enrichment_start(request):
 	if enrichment_service.start_enrichment(refresh=request.POST.get("refresh") == "1", artist_ids=artist_ids):
 		messages.success(request, "MusicBrainz lookup started.")
 	else:
-		messages.warning(request, "A MusicBrainz lookup is already running.")
+		messages.warning(request, "A lookup is already running.")
 	if artist_ids and request.POST.get("next") == "artist":
 		return redirect("library:artist-detail", artist_id=artist_ids[0])
 	return redirect("library:enrichment")
@@ -897,8 +938,33 @@ def enrichment_start(request):
 @login_required
 @require_POST
 def enrichment_stop(request):
-	if enrichment_service.stop_enrichment():
-		messages.info(request, "The lookup will stop after the current artist.")
+	if enrichment_service.stop_job(request.POST.get("job", "musicbrainz")):
+		messages.info(request, "The lookup will stop after the current item.")
+	return redirect("library:enrichment")
+
+
+@login_required
+@require_POST
+def notes_start(request):
+	"""Read liner notes and lyrics (and extract facts) for all albums, one artist or one album."""
+	options = {
+		"refresh": request.POST.get("refresh") == "1",
+		"extract": request.POST.get("extract", "1") == "1",
+		"online_lyrics": request.POST.get("online_lyrics", "1") == "1",
+	}
+	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
+	if album_id.isdigit():
+		options["album_ids"] = [int(album_id)]
+	elif artist_id.isdigit():
+		options["artist_ids"] = [int(artist_id)]
+	if enrichment_service.start_job("notes", **options):
+		messages.success(request, "Reading liner notes and lyrics started.")
+	else:
+		messages.warning(request, "A lookup is already running.")
+	if album_id.isdigit():
+		return redirect("library:album-detail", album_id=int(album_id))
+	if artist_id.isdigit():
+		return redirect("library:artist-detail", artist_id=int(artist_id))
 	return redirect("library:enrichment")
 
 

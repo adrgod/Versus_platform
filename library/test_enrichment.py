@@ -265,7 +265,7 @@ class ReviewFixTests(TestCase):
         from unittest.mock import patch
         from . import enrichment_service
 
-        job = enrichment_service.EnrichmentJob(running=False)
+        job = enrichment_service.BackgroundJob(kind="musicbrainz", running=False, stats=enrichment.EnrichmentStats())
         job.stats.errors = ["Exodus: MusicBrainz stayed busy"]
         user = get_user_model().objects.create_user(username="lookup", password="not-a-real-password")
         client = Client(HTTP_HOST="localhost")

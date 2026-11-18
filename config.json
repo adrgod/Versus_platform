@@ -7,5 +7,12 @@
     "enrichment": {
         "user_agent": "VersusLibrary/0.1 ( replace-with-your-email-or-project-url )",
         "cache_days": 30
+    },
+    "insights": {
+        "ollama_url": "http://localhost:11434",
+        "model": "qwen3:8b",
+        "context_tokens": 16384,
+        "chunk_chars": 24000,
+        "timeout_seconds": 600
     }
 }

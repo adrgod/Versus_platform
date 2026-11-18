@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
-from library.models import Album, AlbumFacet, AlbumProfile, Artist, ArtistFacet, ArtistProfile, FacetKind
+from library.models import Album, AlbumFacet, AlbumInsight, AlbumProfile, Artist, ArtistFacet, ArtistProfile, FacetKind
 
 
 @dataclass
@@ -32,6 +32,12 @@ class Group:
 GROUPS = [
     ("genre", "Genre", "album", False),
     ("decade", "Release decade", "album", True),
+    (FacetKind.MOOD, "Mood", "album", False),
+    (FacetKind.KEYWORD, "Album keyword", "album", False),
+    (FacetKind.LYRIC_THEME, "Lyric theme", "album", False),
+    (FacetKind.BAND_EVENT, "Band history", "artist", False),
+    (FacetKind.CAUSE, "Reason for change", "artist", False),
+    (FacetKind.HIATUS, "Hiatus length", "artist", False),
     ("rating", "Rating", "album", True),
     ("release_type", "Release type", "album", False),
     ("country", "Country", "artist", False),
@@ -77,13 +83,19 @@ def build_index():
         albums_by_artist.setdefault(album["artist_id"], set()).add(album["id"])
 
     album_profiles = {p.album_id: p for p in AlbumProfile.objects.filter(status="matched")}
+    notes_years = {
+        album_id: int(date[:4])
+        for album_id, date in AlbumInsight.objects.exclude(release_date="").values_list("album_id", "release_date")
+        if date[:4].isdigit()
+    }
     for album in albums:
         ids = {album["id"]}
         profile = album_profiles.get(album["id"])
         for genre in split_genres(album["album_genre"]):
             groups["genre"].add(genre, ids)
         groups[FacetKind.LABEL].add(album["album_publisher"], ids)
-        groups["decade"].add(decade_label(album["album_release_year"] or (profile.release_year if profile else None)), ids)
+        year = album["album_release_year"] or (profile.release_year if profile else None) or notes_years.get(album["id"])
+        groups["decade"].add(decade_label(year), ids)
         if profile:
             groups["rating"].add(rating_band(profile.rating), ids)
             kind = profile.secondary_types.split(",")[0].strip() if profile.secondary_types else profile.primary_type

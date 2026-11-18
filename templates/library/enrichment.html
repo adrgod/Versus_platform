@@ -4,8 +4,8 @@
 <div class="breadcrumb"><a href="{% url 'library:explore' %}">Explore</a><span>/</span>Online lookup</div>
 <section class="page-heading"><div><span class="eyebrow">ENRICHMENT / MUSICBRAINZ</span><h1>Online lookup</h1><p class="subheading">Adds genres, country, formation year, line-ups and instruments, studios, producers, engineers, artwork credits, discographies and ratings from <a class="link-button" href="https://musicbrainz.org" rel="noreferrer" target="_blank">MusicBrainz</a>. Your MP3 tags are never changed.</p></div>
   <div class="heading-actions">
-    {% if job and job.running %}
-      <form method="post" action="{% url 'library:enrichment-stop' %}">{% csrf_token %}<button class="button button-light" type="submit">Stop</button></form>
+    {% if running %}
+      <form method="post" action="{% url 'library:enrichment-stop' %}">{% csrf_token %}<input type="hidden" name="job" value="{{ running.kind }}"><button class="button button-light" type="submit">Stop {% if running.kind == "notes" %}reading notes{% else %}MusicBrainz lookup{% endif %}</button></form>
     {% else %}
       <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Look up new music</button></form>
       <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again">Refresh everything</button></form>
@@ -20,8 +20,8 @@
 </section>
 {% if job.stats.errors %}<details class="scan-errors"><summary>{{ job.stats.errors|length }} lookup error{{ job.stats.errors|length|pluralize }}</summary><pre>{% for error in job.stats.errors %}{{ error }}
 {% endfor %}</pre></details>{% endif %}
-{% if job.running %}<script>setTimeout(function () { location.reload(); }, 3000);</script>{% endif %}
 {% endif %}
+{% if running %}<script>setTimeout(function () { location.reload(); }, 3000);</script>{% endif %}
 
 <section class="stat-grid" aria-label="Lookup coverage">
   <article class="stat-cell stat-primary"><span>ARTISTS MATCHED</span><strong>{{ artist_counts.matched }}</strong><small>{{ artist_counts.pending }} not looked up yet</small></article>
@@ -30,6 +30,30 @@
   <article class="stat-cell"><span>ALBUMS WITHOUT MATCH</span><strong>{{ album_counts.not_found }}</strong><small>title not in the discography</small></article>
 </section>
 <p class="security-note">MusicBrainz allows about one request a second, so a first run takes roughly 3–5 seconds per album. Answers are cached in <code>db/musicbrainz_cache</code>, so later runs are quick. From a terminal: <code>python manage.py enrich_library</code>.</p>
+
+<section class="genre-section notes-lookup" aria-label="Liner notes, lyrics and facts">
+  <div class="section-heading"><div><span class="eyebrow">LINER NOTES / LYRICS / LOCAL MODEL</span><h2>Notes, lyrics &amp; story</h2></div>
+    {% if not running %}<div class="heading-actions">
+      <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Read notes &amp; lyrics</button></form>
+      <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Read everything and extract again">Refresh everything</button></form>
+    </div>{% endif %}
+  </div>
+  <p class="subheading">Reads .txt, .nfo and .pdf files in each album folder and the lyrics of every track (MP3 lyrics tag, a .lrc/.txt file named like the track, else <a class="link-button" href="https://lrclib.net" target="_blank" rel="noreferrer">LRCLIB</a>). A local model then picks out keywords, moods, lyric themes and the band's history: who joined or left, splits, hiatuses and why.</p>
+  <div class="source-strip ollama-strip">
+    <div class="source-copy"><span class="eyebrow">LOCAL MODEL</span><strong>{{ ollama.model }} at {{ ollama.url }}</strong></div>
+    <div></div>
+    <div class="scan-state"><span class="status-dot {% if not ollama.reachable %}status-failed{% elif not ollama.model_ready %}status-partial{% endif %}"></span><span>{% if not ollama.reachable %}Not reachable{% elif not ollama.model_ready %}Model not downloaded{% else %}Ready{% endif %}</span><small>{% if not ollama.reachable %}Notes and lyrics are still read; facts are extracted once Ollama answers. Set insights.ollama_url in config.json.{% elif not ollama.model_ready %}Run: ollama pull {{ ollama.model }}{% else %}{{ ollama.models|length }} model{{ ollama.models|length|pluralize }} installed{% endif %}</small></div>
+  </div>
+  {% if notes_job %}<p class="security-note">{% if notes_job.running %}Reading {{ notes_job.stats.current|default:"…" }} · {% elif notes_job.error %}Stopped: {{ notes_job.error }} · {% else %}Last run finished {{ notes_job.finished|date:"j M Y, H:i" }} · {% endif %}{{ notes_job.stats.albums_done }} / {{ notes_job.stats.albums_total }} albums · {{ notes_job.stats.albums_with_notes }} with notes · {{ notes_job.stats.tracks_with_lyrics }} tracks with lyrics ({{ notes_job.stats.lyrics_found_online }} from LRCLIB) · {{ notes_job.stats.albums_extracted }} read by the model{% if notes_job.stats.extraction_skipped %}<br><strong>Facts not extracted:</strong> {{ notes_job.stats.extraction_skipped }}{% endif %}</p>
+  {% if notes_job.stats.errors %}<details class="scan-errors"><summary>{{ notes_job.stats.errors|length }} error{{ notes_job.stats.errors|length|pluralize }}</summary><pre>{% for error in notes_job.stats.errors %}{{ error }}
+{% endfor %}</pre></details>{% endif %}{% endif %}
+  <section class="stat-grid" aria-label="Notes and lyrics coverage">
+    <article class="stat-cell stat-primary"><span>ALBUMS WITH NOTES</span><strong>{{ notes_counts.with_notes }}</strong><small>of {{ notes_counts.albums }} albums</small></article>
+    <article class="stat-cell"><span>TRACKS WITH LYRICS</span><strong>{{ notes_counts.with_lyrics }}</strong><small>of {{ notes_counts.tracks }} tracks</small></article>
+    <article class="stat-cell"><span>ALBUMS READ BY THE MODEL</span><strong>{{ notes_counts.extracted }}</strong><small>keywords, moods, history</small></article>
+    <article class="stat-cell"><span>FAILED</span><strong>{{ notes_counts.failed }}</strong><small>retried on the next run</small></article>
+  </section>
+</section>
 
 <section class="genre-section">
   <div class="section-heading"><div><span class="eyebrow">NEEDS A HAND</span><h2>Artists without a match</h2></div></div>

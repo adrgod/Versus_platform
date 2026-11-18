@@ -10,3 +10,4 @@ db/metadata_backups/
 .DS_Store
 db/tag_write_logs/
 db/musicbrainz_cache/
+db/lrclib_cache/

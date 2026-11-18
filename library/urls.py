@@ -15,6 +15,7 @@ urlpatterns = [
     path("enrichment/", views.enrichment_status, name="enrichment"),
     path("enrichment/start/", views.enrichment_start, name="enrichment-start"),
     path("enrichment/stop/", views.enrichment_stop, name="enrichment-stop"),
+    path("enrichment/notes/", views.notes_start, name="notes-start"),
     path("enrichment/<str:kind>/<int:object_id>/id/", views.set_external_id, name="set-external-id"),
     path("genre/", views.genre_detail, name="genre-detail"),
     path("loaded-date/", views.loaded_date_detail, name="loaded-date-detail"),

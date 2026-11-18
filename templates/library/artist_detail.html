@@ -25,6 +25,10 @@
   </tbody></table></div>
 </section>{% endif %}
 
+{% if history %}<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">FROM THE LINER NOTES</span><h2>Band history</h2></div></div>
+  <ol class="history-list">{% for event in history %}<li><span class="history-year">{{ event.year|default:"—" }}{% if event.end_year %}–{{ event.end_year }}{% endif %}</span><div><strong>{{ event.label }}{% if event.who %}: {{ event.who }}{% endif %}{% if event.years != None %} <span class="muted">({{ event.years }} year{{ event.years|pluralize }})</span>{% endif %}</strong>{% if event.cause_label or event.reason %}<small>{% if event.cause_url %}<a href="{{ event.cause_url }}">{{ event.cause_label }}</a>{% endif %}{% if event.cause_label and event.reason %} · {% endif %}{{ event.reason|default:"" }}</small>{% endif %}<blockquote>“{{ event.evidence }}”</blockquote><small>Source: {{ event.albums|join:", " }}</small></div></li>{% endfor %}</ol>
+</section>{% endif %}
+
 {% if discography %}<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">DISCOGRAPHY / MUSICBRAINZ</span><h2>Studio albums &amp; EPs</h2></div></div>
   <div class="table-wrap"><table class="data-table"><thead><tr><th>RELEASED</th><th>TITLE</th><th>TYPE</th><th>RATING</th><th>IN LIBRARY</th></tr></thead><tbody>
   {% for entry in discography %}<tr><td>{{ entry.date|default:"—" }}</td><td><strong class="table-primary">{{ entry.title }}</strong></td><td>{{ entry.type }}</td><td>{% if entry.rating != None %}★ {{ entry.rating|floatformat:2 }} <span class="muted">({{ entry.votes }})</span>{% else %}—{% endif %}</td><td>{% if entry.album_id %}<a class="link-button" href="{% url 'library:album-detail' entry.album_id %}">Open ↗</a>{% else %}<span class="muted">missing</span>{% endif %}</td></tr>{% endfor %}

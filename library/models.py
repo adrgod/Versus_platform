@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.db import models
 
 # Create your models here.
@@ -148,6 +150,13 @@ class FacetKind(models.TextChoices):
     ARTWORK = "artwork", "Artwork"
     LABEL = "label", "Label"
     MUSICIAN = "musician", "Album musician"
+    # From liner notes, biographies and lyrics (see services/insights.py)
+    KEYWORD = "keyword", "Album keyword"
+    MOOD = "mood", "Mood"
+    LYRIC_THEME = "lyric_theme", "Lyric theme"
+    BAND_EVENT = "band_event", "Band history"
+    CAUSE = "cause", "Reason for change"
+    HIATUS = "hiatus", "Hiatus length"
 
 
 class Facet(models.Model):
@@ -187,3 +196,58 @@ class AlbumFacet(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["album", "facet", "source"], name="unique_album_facet_source"),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Liner notes, lyrics and what a local language model reads out of them
+# ---------------------------------------------------------------------------
+
+class AlbumDocument(models.Model):
+    """A text, PDF or NFO file found in the album folder (liner notes, press sheet, biography)."""
+
+    album = models.ForeignKey(Album, on_delete=models.CASCADE, related_name="documents")
+    file_path = models.CharField(max_length=1000)
+    file_type = models.CharField(max_length=10)
+    text = models.TextField(blank=True)
+    file_mtime_ns = models.BigIntegerField(default=0)
+    file_size = models.BigIntegerField(default=0)
+    release_date = models.CharField(max_length=10, blank=True)
+    when_loaded = models.DateTimeField(auto_now_add=True)
+    when_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["album", "file_path"], name="unique_album_document_path"),
+        ]
+
+    @property
+    def file_name(self):
+        return Path(self.file_path).name
+
+
+class TrackLyrics(models.Model):
+    track = models.OneToOneField(Track, on_delete=models.CASCADE, related_name="lyrics")
+    status = models.CharField(max_length=20, choices=EnrichmentStatus.choices, blank=True, default="")
+    source = models.CharField(max_length=20, blank=True)  # tag, file or lrclib
+    text = models.TextField(blank=True)
+    synced = models.BooleanField(default=False)
+    instrumental = models.BooleanField(default=False)
+    note = models.CharField(max_length=300, blank=True)
+    when_updated = models.DateTimeField(auto_now=True)
+
+
+class AlbumInsight(models.Model):
+    """Facts a local language model read out of an album's notes and lyrics."""
+
+    album = models.OneToOneField(Album, on_delete=models.CASCADE, related_name="insight")
+    status = models.CharField(max_length=20, choices=EnrichmentStatus.choices, blank=True, default="")
+    note = models.CharField(max_length=300, blank=True)
+    model_name = models.CharField(max_length=100, blank=True)
+    input_hash = models.CharField(max_length=64, blank=True)
+    summary = models.TextField(blank=True)
+    release_date = models.CharField(max_length=10, blank=True)
+    keywords = models.JSONField(default=list, blank=True)
+    moods = models.JSONField(default=list, blank=True)
+    lyric_themes = models.JSONField(default=list, blank=True)
+    events = models.JSONField(default=list, blank=True)
+    extracted_at = models.DateTimeField(null=True, blank=True)

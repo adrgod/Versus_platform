@@ -335,7 +335,7 @@ def _store_artist(profile, artist, data, score, note, release_groups, albums):
             instruments.setdefault(instrument, []).append(member["name"])
     for instrument, people in instruments.items():
         links.append((FacetKind.INSTRUMENT, instrument, "", ", ".join(people), len(people)))
-    _link(ArtistFacet, "artist", artist, links)
+    link_facets(ArtistFacet, "artist", artist, links)
 
 
 def _lineup(data):
@@ -415,7 +415,7 @@ def _top_genres(genres):
     return [(genre["name"], genre.get("count", 0)) for genre in genres[:MAX_GENRES] if genre.get("count", 0) >= floor]
 
 
-def _link(link_model, owner_field, owner, links):
+def link_facets(link_model, owner_field, owner, links, source=SOURCE):
     """Create facet links; one per (kind, name), joining details of repeats."""
     merged = {}
     for kind, name, external_id, detail, weight in links:
@@ -434,7 +434,7 @@ def _link(link_model, owner_field, owner, links):
         link_model.objects.create(**{
             owner_field: owner,
             "facet": facet,
-            "source": SOURCE,
+            "source": source,
             "detail": "; ".join(entry["details"])[:300],
             "weight": entry["weight"],
         })
@@ -485,7 +485,7 @@ def enrich_album(client, album, release_groups):
         links = [(FacetKind.GENRE, name, "", "", count)
                  for name, count in _top_genres([{"name": n, "count": c} for n, c in genres.items()])]
         links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], 0) for credit in credits]
-        _link(AlbumFacet, "album", album, links)
+        link_facets(AlbumFacet, "album", album, links)
     return True
 
 

@@ -17,6 +17,23 @@ album musicians and label. MP3 tags and the tag-derived columns are never change
 - **Explore** (`/explore/`) filters the library by any combination of tags (OR within a group, AND across
   groups). **Decades** (`/explore/decades/`) ranks albums per decade (XXX0–XXX9) by rating.
 
+# Liner notes, lyrics and band history (local model)
+
+`python manage.py enrich_notes` (or **Online lookup → Notes, lyrics & story**, or **Read notes & lyrics** on an album page):
+
+- Reads `.txt`, `.nfo` and `.pdf` files anywhere in each album folder (above `CD1`/`Disc 2` folders) and
+  shows them on the album page. A "Release date: …" line is picked up when the tags have no year.
+- Lyrics per track: the MP3 lyrics tag (USLT), else `<track>.lrc` / `<track>.txt` beside the MP3, else
+  [LRCLIB](https://lrclib.net) (free, no key; `--no-online-lyrics` to skip). Shown on the album page.
+- A local [Ollama](https://ollama.com) model extracts album keywords, moods, lyric themes and band history:
+  members joining/leaving/dying, splits, hiatuses, reunions, with the reason (parenthood, drugs, emigration,
+  war…) and hiatus length. Each history item keeps the quote it came from; keywords not found in the text
+  and events without a matching quote are dropped. All of it is browsable in **Explore**.
+- Configure `insights` in `config.json`: `ollama_url` (can be another machine, e.g. `http://my-mac.local:11434`)
+  and `model` (default `qwen3:8b`, install with `ollama pull qwen3:8b`). Without a reachable model, notes and
+  lyrics are still read; facts are extracted on a later run. Unchanged text is never sent to the model twice.
+- Options: `--refresh`, `--artist NAME`, `--no-extract`, `--no-online-lyrics`. Needs `pypdf` (in requirements.txt).
+
 # Steps on the Roadmap
 
 ## PHASE 1 — MUSIC LIBRARY SCANNER
