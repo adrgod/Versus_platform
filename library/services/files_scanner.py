@@ -42,19 +42,100 @@ def read_artwork_from_id3(file_path):
 
     cover = next((picture for picture in pictures if picture.type == 3), pictures[0])
 
-    image = Image.open(BytesIO(cover.data))
-    image = ImageOps.exif_transpose(image)
-    image.thumbnail((600, 600), Image.Resampling.LANCZOS)
+    return compress_image(cover.data)
 
-    output = BytesIO()
-    image.convert("RGB").save(
-        output,
-        format="JPEG",
-        quality=85,
-        optimize=True,
-    )
 
+def compress_image(data):
+    """Image bytes -> JPEG of at most 600x600; None when the data is not an image."""
+    try:
+        image = Image.open(BytesIO(data))
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((600, 600), Image.Resampling.LANCZOS)
+
+        output = BytesIO()
+        image.convert("RGB").save(
+            output,
+            format="JPEG",
+            quality=85,
+            optimize=True,
+        )
+    except Exception:
+        return None
     return output.getvalue()
+
+
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _batch_index(parts):
+    """Index of the closest YYYYMMDD folder that leaves publisher/band/album/file below it."""
+    for index in range(len(parts) - 5, -1, -1):
+        name = parts[index]
+        if len(name) != 8 or not name.isdigit():
+            continue
+        try:
+            datetime.strptime(name, "%Y%m%d")
+        except ValueError:
+            continue
+        return index
+    return None
+
+
+def album_folder(file_path):
+    """The album folder of ``.../YYYYMMDD/PUBLISHER/BAND/ALBUM/...``; else the file's folder."""
+    path = Path(file_path)
+    index = _batch_index(path.parts)
+    return Path(*path.parts[: index + 4]) if index is not None else path.parent
+
+
+def find_cover_image(file_path, album, artist, cache=None):
+    """Compressed cover from an image file inside the album folder (any depth).
+
+    Only images whose name contains "cover", the album name or the artist name
+    qualify; "cover" beats the album name, which beats the artist name. Folders
+    such as "photos" or "artwork" are searched like any other.
+    """
+    cache = {} if cache is None else cache
+    folder = album_folder(file_path)
+    key = (folder, album, artist)
+    if key in cache:
+        return cache[key]
+
+    if folder not in cache:
+        try:
+            cache[folder] = sorted(
+                path
+                for path in folder.rglob("*")
+                if path.suffix.lower() in IMAGE_SUFFIXES and path.is_file()
+            )
+        except OSError:
+            cache[folder] = []
+
+    album_key = normalize_for_path_match(album)
+    artist_key = normalize_for_path_match(artist)
+    best, best_rank = None, None
+    for image_path in cache[folder]:
+        name = normalize_for_path_match(image_path.stem)
+        if "cover" in name:
+            score = 3
+        elif len(album_key) >= 3 and album_key in name:
+            score = 2
+        elif len(artist_key) >= 3 and artist_key in name:
+            score = 1
+        else:
+            continue
+        rank = (-score, len(image_path.relative_to(folder).parts), str(image_path))
+        if best_rank is None or rank < best_rank:
+            best, best_rank = image_path, rank
+
+    data = None
+    if best is not None:
+        try:
+            data = compress_image(best.read_bytes())
+        except OSError:
+            data = None
+    cache[key] = data
+    return data
 
 
 def parse_batch_path(file_path):
@@ -66,19 +147,13 @@ def parse_batch_path(file_path):
     ``(None, "")``.
     """
     parts = Path(file_path).parts
-    for index in range(len(parts) - 5, -1, -1):
-        name = parts[index]
-        if len(name) != 8 or not name.isdigit():
-            continue
-        try:
-            batch_date = datetime.strptime(name, "%Y%m%d").date()
-        except ValueError:
-            continue
-        return batch_date, parts[index + 1].strip()
-    return None, ""
+    index = _batch_index(parts)
+    if index is None:
+        return None, ""
+    return datetime.strptime(parts[index], "%Y%m%d").date(), parts[index + 1].strip()
 
 
-def read_file_metadata(file_path, config):
+def read_file_metadata(file_path, config, image_cache=None):
     file_info = EasyID3(file_path)
     audio_info = MP3(file_path).info
     file_data: dict[str, str | bytes | None] = {
@@ -107,6 +182,12 @@ def read_file_metadata(file_path, config):
 
         if att == "tracknumber":
             file_data[att] = clean_tracknumber(file_data[att])
+
+    # The embedded cover leads; otherwise look for an image file in the album folder.
+    if "album_cover" in file_attributes and not file_data.get("album_cover"):
+        file_data["album_cover"] = find_cover_image(
+            file_path, file_data.get("album", ""), file_data.get("artist", ""), image_cache
+        )
 
     # The tag leads; the folder name only fills a missing publisher.
     batch_date, folder_publisher = parse_batch_path(file_path)
@@ -212,9 +293,10 @@ def read_all_metadata(source_folder, config, errors=None):
         )
 
     tracks = []
+    image_cache = {}
     for file_path in mp3_files:
         try:
-            track = read_file_metadata(file_path, config)
+            track = read_file_metadata(file_path, config, image_cache)
             tracks.append(track)
         except Exception as error:
             if errors is not None:

@@ -150,3 +150,86 @@ class BatchAndPublisherTests(TestCase):
         name = "P" * 100
         import_records([make_record(publisher=name)])
         self.assertEqual(Album.objects.get().album_publisher, name)
+
+
+class FolderCoverTests(TestCase):
+    def setUp(self):
+        from tempfile import TemporaryDirectory
+
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.album_dir = Path(self.directory.name) / "20240315" / "Label" / "Band" / "My Album"
+        (self.album_dir / "mp3s").mkdir(parents=True)
+        (self.album_dir / "photos").mkdir()
+        (self.album_dir / "artwork").mkdir()
+        self.track = self.album_dir / "mp3s" / "01.mp3"
+        self.track.write_bytes(b"")
+
+    def image(self, relative, color):
+        from PIL import Image
+
+        path = self.album_dir / relative
+        Image.new("RGB", (800, 800), color).save(path)
+        return path
+
+    def find(self, album="My Album", artist="Band"):
+        from library.services.files_scanner import find_cover_image
+
+        return find_cover_image(self.track, album, artist, {})
+
+    def pixel(self, data):
+        from io import BytesIO
+        from PIL import Image
+
+        image = Image.open(BytesIO(data))
+        self.assertLessEqual(max(image.size), 600)
+        return image.getpixel((10, 10))
+
+    def test_no_matching_image_gives_none(self):
+        self.image("photos/party.jpg", "red")
+        self.assertIsNone(self.find())
+
+    def test_cover_name_beats_album_and_artist_names(self):
+        self.image("photos/band.jpg", (255, 0, 0))
+        self.image("photos/my_album.png", (0, 255, 0))
+        self.image("artwork/Front Cover.jpg", (0, 0, 255))
+        red, green, blue = self.pixel(self.find())
+        self.assertGreater(blue, 200)
+        self.assertLess(red + green, 100)
+
+    def test_album_name_beats_artist_name(self):
+        self.image("photos/band.jpg", (255, 0, 0))
+        self.image("photos/My Album.jpg", (0, 255, 0))
+        red, green, _ = self.pixel(self.find())
+        self.assertGreater(green, 200)
+        self.assertLess(red, 100)
+
+    def test_artist_name_is_used_when_nothing_better(self):
+        self.image("photos/Band live.jpg", (255, 0, 0))
+        self.assertGreater(self.pixel(self.find())[0], 200)
+
+    def test_embedded_tag_cover_wins(self):
+        from unittest.mock import MagicMock
+        from library.services import files_scanner
+
+        self.image("cover.jpg", (255, 0, 0))
+        config = {"file_attributes": ["album", "artist", "album_cover"], "name_fields": []}
+        tags = {"album": ["My Album"], "artist": ["Band"]}
+        with patch.object(files_scanner, "EasyID3", return_value=tags), \
+                patch.object(files_scanner, "MP3", return_value=MagicMock()), \
+                patch.object(files_scanner, "read_artwork_from_id3", return_value=b"embedded"):
+            record = files_scanner.read_file_metadata(self.track, config)
+        self.assertEqual(record["album_cover"], b"embedded")
+
+    def test_folder_cover_used_when_tag_has_none(self):
+        from unittest.mock import MagicMock
+        from library.services import files_scanner
+
+        self.image("cover.jpg", (255, 0, 0))
+        config = {"file_attributes": ["album", "artist", "album_cover"], "name_fields": []}
+        tags = {"album": ["My Album"], "artist": ["Band"]}
+        with patch.object(files_scanner, "EasyID3", return_value=tags), \
+                patch.object(files_scanner, "MP3", return_value=MagicMock()), \
+                patch.object(files_scanner, "read_artwork_from_id3", return_value=None):
+            record = files_scanner.read_file_metadata(self.track, config)
+        self.assertTrue(record["album_cover"])
