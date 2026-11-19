@@ -251,3 +251,4 @@ class AlbumInsight(models.Model):
     lyric_themes = models.JSONField(default=list, blank=True)
     events = models.JSONField(default=list, blank=True)
     extracted_at = models.DateTimeField(null=True, blank=True)
+    llm_duration_seconds = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)

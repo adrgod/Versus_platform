@@ -10,7 +10,7 @@
     },
     "insights": {
         "ollama_url": "http://localhost:11434",
-        "model": "qwen3:8b",
+        "model": "qwen3.8:latest",
         "context_tokens": 16384,
         "chunk_chars": 24000,
         "timeout_seconds": 600

@@ -15,7 +15,9 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from difflib import SequenceMatcher
+from time import perf_counter
 
 from django.db import transaction
 from django.utils import timezone
@@ -276,9 +278,11 @@ class InsightStats:
     tracks_with_lyrics: int = 0
     lyrics_found_online: int = 0
     albums_extracted: int = 0
+    llm_duration_seconds: float = 0
     extraction_skipped: str = ""
     errors: list = field(default_factory=list)
     current: str = ""
+    model_running: bool = False
 
 
 def notes_text_of(documents):
@@ -322,8 +326,17 @@ def process_album(album, *, client=None, lyrics_client=None, refresh=False, stat
         return insight
 
     chunk_chars = settings()["chunk_chars"]
-    from_notes = extract_from_notes(client, notes_text, chunk_chars, known_names(album)) if notes_text else {}
-    from_lyrics = extract_from_lyrics(client, lyrics_text, chunk_chars) if lyrics_text else {}
+    model_started = perf_counter()
+    stats.model_running = True
+    try:
+        from_notes = extract_from_notes(client, notes_text, chunk_chars, known_names(album)) if notes_text else {}
+        from_lyrics = extract_from_lyrics(client, lyrics_text, chunk_chars) if lyrics_text else {}
+    finally:
+        stats.model_running = False
+        duration = Decimal(str(round(perf_counter() - model_started, 3)))
+        insight.llm_duration_seconds = duration
+        insight.save(update_fields=["llm_duration_seconds"])
+        stats.llm_duration_seconds += float(duration)
 
     with transaction.atomic():
         insight.status = EnrichmentStatus.MATCHED

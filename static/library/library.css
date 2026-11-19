@@ -82,6 +82,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .stat-cell > span { color: var(--muted); font: 800 9px/1.3 var(--display); }
 .stat-cell > strong { margin: 7px 0 1px; font: 600 39px/.95 var(--serif); }
 .stat-cell > small { color: var(--muted); font-size: 10px; }
+.stat-disclosure > summary { cursor: pointer; }
+.stat-disclosure > summary > span { color: var(--muted); font: 800 9px/1.3 var(--display); }
+.stat-disclosure > summary > strong { display: block; margin: 7px 0 1px; font: 600 39px/.95 var(--serif); }
+.stat-disclosure > summary > small { color: var(--signal-dark); font-size: 10px; }
+.insight-album-list { max-height: 220px; overflow-y: auto; margin: 12px 0 0; padding: 0; list-style: none; font-size: 11px; }
+.insight-album-list li { padding: 5px 0; border-top: 1px solid var(--line); }
+.insight-album-list a { color: var(--signal-dark); font-weight: 700; }
+.insight-album-list small { display: block; color: var(--muted); font-size: 10px; }
 .stat-primary { color: #fff; background: var(--moss); }
 .stat-primary > span, .stat-primary > small { color: #dce5da; }
 .dashboard-lower { margin-top: 43px; }
@@ -210,6 +218,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .quality-meter i { height: 100%; display: block; background: var(--moss); }
 .missing-tags { color: var(--signal-dark); font-size: 10px; }
 .complete-tag { display: inline-block; padding: 3px 6px; color: var(--moss); background: #e3eadf; font-size: 9px; font-weight: 750; }
+.completion-tree { border-top: 1px solid var(--ink); }
+.completion-batch, .completion-artist, .completion-album { border-bottom: 1px solid var(--line); }
+.completion-batch > summary, .completion-artist > summary, .completion-album > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px 16px; padding: 13px 15px; cursor: pointer; list-style: none; }
+.completion-batch > summary::-webkit-details-marker, .completion-artist > summary::-webkit-details-marker, .completion-album > summary::-webkit-details-marker { display: none; }
+.completion-batch > summary::before, .completion-artist > summary::before, .completion-album > summary::before { content: "+"; color: var(--signal); font-weight: 800; }
+.completion-batch[open] > summary::before, .completion-artist[open] > summary::before, .completion-album[open] > summary::before { content: "–"; }
+.completion-batch > summary { background: var(--surface); }
+.completion-batch > summary strong { font: 600 18px/1.1 var(--serif); }
+.completion-batch > summary span, .completion-artist > summary span { margin-left: auto; color: var(--muted); font-size: 10px; }
+.completion-batch-content { padding-left: 18px; }
+.completion-artist > summary { border-top: 1px solid var(--line); }
+.completion-artist > summary strong { font-size: 12px; }
+.completion-artist > summary strong a:hover, .completion-album-content > a:hover { text-decoration: underline; }
+.completion-artist-content { padding-left: 16px; }
+.completion-album > summary { padding: 10px 12px; }
+.completion-album > summary strong { font-size: 11px; }
+.completion-album > summary small { margin-left: auto; color: var(--muted); font-size: 9px; }
+.completion-album-content { padding: 0 12px 12px 31px; }
+.completion-album-content > p { margin: 8px 0; }
+.completion-track-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.completion-track-list li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, auto) auto; align-items: center; gap: 8px 14px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 10px; }
+.completion-track-list li > span:first-child { overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .completion-batch-content, .completion-artist-content { padding-left: 8px; }
+  .completion-track-list li { grid-template-columns: 1fr auto; }
+  .completion-track-list li > span:nth-child(2) { grid-column: 1/-1; }
+}
 .editor-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(200px, .7fr); gap: 40px; align-items: start; }
 .tag-form { border-top: 1px solid var(--ink); }
 .field-row { display: grid; grid-template-columns: minmax(125px, .5fr) minmax(0, 1fr); align-items: center; gap: 20px; padding: 10px 0; border-bottom: 1px solid var(--line); }

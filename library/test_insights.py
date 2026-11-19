@@ -1,5 +1,7 @@
+from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -204,9 +206,20 @@ class ExtractionTests(InsightTestCase):
             def extract(self, system, text, schema):
                 raise insights.OllamaError("model crashed")
 
-        stats = self.run_extraction(Broken())
+        with patch("library.services.insights.perf_counter", side_effect=[1.0, 3.5]):
+            stats = self.run_extraction(Broken())
         self.assertIn("model crashed", stats.errors[0])
         self.assertEqual(AlbumInsight.objects.get().status, EnrichmentStatus.ERROR)
+        self.assertEqual(AlbumInsight.objects.get().llm_duration_seconds, Decimal("2.5"))
+        self.assertAlmostEqual(stats.llm_duration_seconds, 2.5)
+        self.assertFalse(stats.model_running)
+
+    def test_successful_model_runtime_is_saved_per_album_and_run(self):
+        with patch("library.services.insights.perf_counter", side_effect=[1.0, 2.234]):
+            stats = self.run_extraction()
+        self.assertEqual(AlbumInsight.objects.get().llm_duration_seconds, Decimal("1.234"))
+        self.assertAlmostEqual(stats.llm_duration_seconds, 1.234)
+        self.assertFalse(stats.model_running)
 
     def test_long_text_is_split_into_paragraph_chunks(self):
         text = "\n\n".join(["a" * 50] * 5)
@@ -234,3 +247,38 @@ class ExtractionTests(InsightTestCase):
             lookup_page = client.get(reverse("library:enrichment"))
         self.assertContains(lookup_page, "Not reachable")
         self.assertContains(lookup_page, "http://other-mac:11434")
+
+    def test_lookup_page_lists_enriched_and_failed_albums(self):
+        self.run_extraction()
+        failed_album = Album.objects.create(artist=self.album.artist, album_name="Failed album")
+        AlbumInsight.objects.create(album=failed_album, status=EnrichmentStatus.ERROR, note="model crashed")
+
+        user = get_user_model().objects.create_user(username="lookup", password="not-a-real-password")
+        client = Client(HTTP_HOST="localhost")
+        client.force_login(user)
+        response = client.get(reverse("library:enrichment"))
+
+        self.assertContains(response, "Iron Roots — Rust and Bone")
+        self.assertContains(response, "Iron Roots — Failed album")
+        self.assertContains(response, "model crashed")
+        self.assertContains(response, "s LLM time")
+
+    def test_running_model_is_animated_on_lookup_page(self):
+        user = get_user_model().objects.create_user(username="running-model", password="not-a-real-password")
+        client = Client(HTTP_HOST="localhost")
+        client.force_login(user)
+        job = SimpleNamespace(
+            kind="notes",
+            running=True,
+            stats=SimpleNamespace(model_running=True, current="Iron Roots — Rust and Bone"),
+        )
+        with (
+            patch("library.views.enrichment_service.get_job", side_effect=lambda kind: job if kind == "notes" else None),
+            patch("library.views.enrichment_service.running_job", return_value=job),
+            patch("library.views.OllamaClient") as ollama,
+        ):
+            ollama.return_value.status.return_value = {"reachable": True, "model_ready": True, "models": ["model"]}
+            response = client.get(reverse("library:enrichment"))
+
+        self.assertContains(response, "Model running")
+        self.assertContains(response, "status-dot status-scanning")

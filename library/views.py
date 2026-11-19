@@ -498,6 +498,17 @@ def _quality_rows(search=""):
 		.order_by(*queries.track_order())[:1000]
 	)
 	fields = repository.get_config()["quality_attributes"]
+	result = []
+	for row in rows:
+		row.missing_fields = _missing_quality_fields(row, fields)
+		row.quality_percent = (
+			round(100 * (len(fields) - len(row.missing_fields)) / len(fields)) if fields else 100
+		)
+		result.append(row)
+	return result
+
+
+def _missing_quality_fields(row, fields):
 	row_attributes = {
 		"artist": "artist_name",
 		"album": "album_name",
@@ -506,17 +517,7 @@ def _quality_rows(search=""):
 		"date": "release_year",
 		"genre": "genre",
 	}
-	result = []
-	for row in rows:
-		row.missing_fields = [
-			field for field in fields
-			if not getattr(row, row_attributes.get(field, field))
-		]
-		row.quality_percent = (
-			round(100 * (len(fields) - len(row.missing_fields)) / len(fields)) if fields else 100
-		)
-		result.append(row)
-	return result
+	return [field for field in fields if not getattr(row, row_attributes.get(field, field))]
 
 
 @login_required
@@ -528,6 +529,80 @@ def quality_report(request):
 		"search": search,
 		"incomplete_count": sum(bool(track.missing_fields) for track in tracks),
 		"average_score": round(sum(track.quality_percent for track in tracks) / len(tracks)) if tracks else 0,
+	})
+
+
+@login_required
+def completeness_report(request):
+	fields = repository.get_config()["quality_attributes"]
+	tracks_by_album = {}
+	tracks = (
+		queries.tracks()
+		.select_related("album", "album__artist")
+		.annotate(release_year=F("album__album_release_year"), genre=F("album__album_genre"))
+		.order_by(*queries.track_order())
+	)
+	for track in tracks:
+		tracks_by_album.setdefault(track.album_id, []).append(track)
+
+	batches = {}
+	complete_count = incomplete_count = 0
+	albums = Album.objects.select_related("artist").order_by(
+		Lower("artist__artist_name"), Lower("album_name")
+	)
+	for album in albums:
+		batch = batches.setdefault(album.album_batch_date, {
+			"date": album.album_batch_date,
+			"artists": {},
+			"album_count": 0,
+			"complete_count": 0,
+			"incomplete_count": 0,
+		})
+		artist = batch["artists"].setdefault(album.artist_id, {
+			"artist": album.artist,
+			"albums": [],
+			"album_count": 0,
+			"complete_count": 0,
+			"incomplete_count": 0,
+		})
+		album_tracks = tracks_by_album.get(album.pk, [])
+		track_rows = []
+		missing_fields = set()
+		for track in album_tracks:
+			track_missing = _missing_quality_fields(track, fields)
+			missing_fields.update(track_missing)
+			track_rows.append({
+				"id": track.track_id,
+				"name": track.track_name or "Untitled track",
+				"missing_fields": track_missing,
+			})
+		if not album_tracks:
+			missing_fields.add("tracks")
+		is_complete = bool(album_tracks) and not missing_fields
+		album_row = {
+			"album": album,
+			"tracks": track_rows,
+			"missing_fields": sorted(missing_fields),
+			"complete": is_complete,
+		}
+		artist["albums"].append(album_row)
+		for group in (batch, artist):
+			group["album_count"] += 1
+			group["complete_count" if is_complete else "incomplete_count"] += 1
+		if is_complete:
+			complete_count += 1
+		else:
+			incomplete_count += 1
+
+	batch_rows = []
+	for batch in sorted(batches.values(), key=lambda item: item["date"] or date.min, reverse=True):
+		batch["artists"] = sorted(batch["artists"].values(), key=lambda item: item["artist"].artist_name.casefold())
+		batch_rows.append(batch)
+	return render(request, "library/completeness_report.html", {
+		"batches": batch_rows,
+		"album_count": complete_count + incomplete_count,
+		"complete_count": complete_count,
+		"incomplete_count": incomplete_count,
 	})
 
 
@@ -899,6 +974,16 @@ def enrichment_status(request):
 		AlbumProfile.objects.filter(status=EnrichmentStatus.NOT_FOUND, album__artist__profile__status=EnrichmentStatus.MATCHED)
 		.select_related("album", "album__artist", "album__artist__profile").order_by(Lower("album__artist__artist_name"), Lower("album__album_name"))
 	)
+	extracted_albums = (
+		AlbumInsight.objects.filter(status=EnrichmentStatus.MATCHED)
+		.select_related("album", "album__artist")
+		.order_by(Lower("album__artist__artist_name"), Lower("album__album_name"))
+	)
+	failed_albums = (
+		AlbumInsight.objects.filter(status=EnrichmentStatus.ERROR)
+		.select_related("album", "album__artist")
+		.order_by(Lower("album__artist__artist_name"), Lower("album__album_name"))
+	)
 	ollama = OllamaClient()
 	return render(request, "library/enrichment.html", {
 		"artist_counts": artist_counts,
@@ -906,6 +991,8 @@ def enrichment_status(request):
 		"unmatched_artists": unmatched_artists[:300],
 		"doubtful_artists": doubtful_artists[:100],
 		"unmatched_albums": unmatched_albums[:300],
+		"extracted_albums": extracted_albums,
+		"failed_albums": failed_albums,
 		"job": enrichment_service.get_job("musicbrainz"),
 		"notes_job": enrichment_service.get_job("notes"),
 		"running": enrichment_service.running_job(),

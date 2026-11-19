@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
@@ -67,6 +68,27 @@ class LibraryWorkflowTests(TestCase):
         self.assertContains(album_response, "Test Album")
         self.assertEqual(quality_response.status_code, 200)
         self.assertContains(quality_response, "Test Track")
+        self.assertContains(dashboard_response, "View completeness by batch")
+
+    def test_completeness_report_groups_batches_artists_and_albums(self):
+        import_records([self.record(album="Other Album", title="Other Track")])
+        Album.objects.update(album_batch_date=date(2026, 11, 18))
+        Track.objects.filter(track_title="Test Track").update(track_title="")
+
+        with patch("library.views.repository.get_config", return_value={"quality_attributes": ["title"]}):
+            response = self.client.get(reverse("library:completeness-report"))
+
+        self.assertEqual(response.status_code, 200)
+        batch, = response.context["batches"]
+        self.assertEqual(batch["date"], date(2026, 11, 18))
+        self.assertEqual((batch["album_count"], batch["complete_count"], batch["incomplete_count"]), (2, 1, 1))
+        artist, = batch["artists"]
+        self.assertEqual(artist["artist"].artist_name, "Test Artist")
+        albums = {item["album"].album_name: item for item in artist["albums"]}
+        self.assertFalse(albums["Test Album"]["complete"])
+        self.assertEqual(albums["Test Album"]["missing_fields"], ["title"])
+        self.assertTrue(albums["Other Album"]["complete"])
+        self.assertContains(response, "Missing: title")
 
     def test_artist_and_album_pages_show_the_loaded_music(self):
         artist = Artist.objects.get()

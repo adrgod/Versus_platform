@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -200,7 +202,11 @@ class ExplorerTests(TestCase):
         self.assertContains(response, "Bonded By Blood")
         self.assertNotContains(response, "Pleasure to Kill")
         self.assertContains(client.get(reverse("library:decade-index")), "1980 – 1989")
-        self.assertEqual(client.get(reverse("library:enrichment")).status_code, 200)
+        with patch("library.views.enrichment_service.start_enrichment") as start_lookup:
+            lookup_page = client.get(reverse("library:enrichment"))
+        self.assertEqual(lookup_page.status_code, 200)
+        self.assertContains(lookup_page, "Start online lookup")
+        start_lookup.assert_not_called()
         exodus = Artist.objects.get(artist_name="Exodus")
         artist_page = client.get(reverse("library:artist-detail", args=(exodus.pk,)))
         self.assertContains(artist_page, "Kirk Hammett")

@@ -33,6 +33,7 @@ urlpatterns = [
     path("batches/<str:day>/write/", views.batch_write, name="batch-write"),
     path("batches/<str:day>/status/", views.batch_status, name="batch-status"),
     path("quality/", views.quality_report, name="quality-report"),
+    path("quality/completeness/", views.completeness_report, name="completeness-report"),
     path("tracks/<int:track_id>/edit/", views.edit_track_tags, name="edit-tags"),
     path("tracks/<int:track_id>/confirm/", views.confirm_tag_edit, name="confirm-tag-edit"),
 ]
