@@ -19,7 +19,7 @@
       d.setAttribute("data-motion", s.motion || "full");
     })();
   </script>
-  <link rel="stylesheet" href="{% static 'library/library.css' %}?v=7">
+  <link rel="stylesheet" href="{% static 'library/library.css' %}?v=9">
 </head>
 <body>
   <div class="app-frame">
@@ -139,8 +139,9 @@
       <audio id="library-audio" preload="metadata"></audio>
     </section>
   {% endif %}
-  <script src="{% static 'library/settings.js' %}?v=1" defer></script>
-  <script src="{% static 'library/library.js' %}?v=3" defer></script>
+  <script src="{% static 'library/settings.js' %}?v=2" defer></script>
+  <script src="{% static 'library/tag_edit.js' %}?v=1" defer></script>
+  <script src="{% static 'library/library.js' %}?v=4" defer></script>
   <script type="importmap">{"imports":{"three":"{% static 'library/vendor/three.module.js' %}"}}</script>
   <script type="module" src="{% static 'library/data_cloud.js' %}?v=2"></script>
 </body>

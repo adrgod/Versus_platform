@@ -141,6 +141,35 @@ class EnrichmentTests(TestCase):
 
         self.assertEqual(ArtistProfile.objects.get(artist__artist_name="Nobody Known").status, EnrichmentStatus.NOT_FOUND)
 
+    def test_album_not_found_online_still_gets_artist_genres_and_country(self):
+        import_records([record(album="Unlisted Demo", date="1983", file_path="/music/3.mp3", genre="")])
+        enrichment.enrich_library(self.client_api)
+        demo = AlbumProfile.objects.get(album__album_name="Unlisted Demo")
+        self.assertEqual(demo.status, EnrichmentStatus.NOT_FOUND)
+        self.assertEqual(demo.country, "United States")
+        links = {(link.facet.kind, link.facet.name) for link in AlbumFacet.objects.filter(album=demo.album).select_related("facet")}
+        self.assertIn(("genre", "thrash metal"), links)
+        self.assertNotIn(("member", "Tom Hunting"), links)  # members belong to the artist page only
+        self.assertEqual(demo.album.album_genre, "thrash metal, heavy metal")
+
+    def test_album_lookup_reuses_complete_artist_without_artist_requests(self):
+        enrichment.enrich_library(self.client_api)
+        album = Album.objects.get(album_name__startswith="Bonded")
+        again = FakeMusicBrainz()
+        enrichment.enrich_library(again, album_ids=[album.pk])
+        kinds = {call[0] for call in again.calls}
+        self.assertNotIn("search", kinds)
+        self.assertEqual(AlbumProfile.objects.get(album=album).status, EnrichmentStatus.MATCHED)
+
+    def test_album_lookup_fetches_artist_when_its_tags_are_missing(self):
+        enrichment.enrich_library(self.client_api)
+        album = Album.objects.get(album_name__startswith="Bonded")
+        ArtistFacet.objects.filter(artist=album.artist, facet__kind="genre").delete()
+        again = FakeMusicBrainz()
+        enrichment.enrich_library(again, album_ids=[album.pk])
+        self.assertIn("search", {call[0] for call in again.calls})
+        self.assertTrue(ArtistFacet.objects.filter(artist=album.artist, facet__kind="genre").exists())
+
     def test_second_run_skips_what_was_looked_up(self):
         enrichment.enrich_library(self.client_api)
         self.client_api.calls.clear()
@@ -280,3 +309,56 @@ class ReviewFixTests(TestCase):
             response = client.get(reverse("library:enrichment"))
         self.assertContains(response, "Exodus: MusicBrainz stayed busy")
         self.assertNotContains(response, "{{")
+
+
+class AlbumInheritsArtistTagsTests(TestCase):
+    def test_genre_and_country_are_copied_onto_the_album(self):
+        import_records([record(genre="")])
+        enrichment.enrich_library(FakeMusicBrainz())
+        album = Album.objects.get(album_name__startswith="Bonded")
+        AlbumFacet.objects.filter(album=album, facet__kind="genre").delete()
+        Album.objects.filter(pk=album.pk).update(album_genre="")
+        enrichment.inherit_artist_tags(album)  # no network
+        album.refresh_from_db()
+        self.assertEqual(album.album_genre, "thrash metal, heavy metal")
+        self.assertEqual(album.profile.country, "United States")
+        names = set(AlbumFacet.objects.filter(album=album, facet__kind="genre").values_list("facet__name", flat=True))
+        self.assertEqual(names, {"thrash metal", "heavy metal"})
+
+    def test_pages_show_only_the_albums_own_data(self):
+        import_records([record(genre="")])
+        enrichment.enrich_library(FakeMusicBrainz())
+        album = Album.objects.get(album_name__startswith="Bonded")
+        AlbumFacet.objects.filter(album=album, facet__kind="member").delete()
+        get_user_model().objects.create_user("u", password="p")
+        client = Client()
+        client.login(username="u", password="p")
+        page = client.get(reverse("library:album-detail", args=(album.pk,))).content.decode()
+        self.assertIn("UNITED STATES", page)
+        self.assertNotIn("Tom Hunting", page)
+
+
+class ArtistFilterTests(TestCase):
+    def setUp(self):
+        import_records([
+            record(),
+            record(artist="Second Band", album="Quiet", date="2001", file_path="/music/5.mp3", genre="Ambient; Drone"),
+        ])
+        enrichment.enrich_library(FakeMusicBrainz())
+        get_user_model().objects.create_user("u", password="p")
+        self.web = Client()
+        self.web.login(username="u", password="p")
+
+    def names(self, **params):
+        response = self.web.get(reverse("library:artist-list"), params)
+        return [a.artist_name for a in response.context["artists"]]
+
+    def test_each_filter_narrows_the_list(self):
+        self.assertEqual(self.names(), ["Exodus", "Second Band"])
+        self.assertEqual(self.names(country="United States"), ["Exodus"])
+        self.assertEqual(self.names(genre="Ambient"), ["Second Band"])
+        self.assertEqual(self.names(genre="thrash metal"), ["Exodus"])
+        self.assertEqual(self.names(year="2001"), ["Second Band"])
+        self.assertEqual(self.names(albums="1"), ["Exodus", "Second Band"])
+        self.assertEqual(self.names(albums="7+"), [])
+        self.assertEqual(self.names(voice="instrumental"), [])

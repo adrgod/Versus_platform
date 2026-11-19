@@ -24,11 +24,12 @@ from mutagen.easyid3 import EasyID3
 
 from . import enrichment_service, queries, repository
 from .models import (
-	Album, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
+	Album, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, ArtistFacet, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
 )
 from .scan_service import is_importing, read_local_tags, start_scan
 from .services.files_scanner import (
 	calculate_confidence_for_track,
+	derived_tags,
 	read_artwork_from_id3,
 	read_file_metadata,
 )
@@ -36,6 +37,7 @@ from .services import enrichment as enrichment_api
 from .services import explorer
 from .services import insights as insights_api
 from .services.ollama import OllamaClient
+from .services import tag_editor
 from .services.carry_over import import_and_carry_over
 from .services.tag_writer import TagSnapshot, batch_files, get_job, plan_file, start_batch_write
 
@@ -301,12 +303,90 @@ def loaded_date_detail(request):
 @login_required
 def artist_list(request):
 	search = request.GET.get("q", "").strip()
-	rows = (
-		queries.artists()
-		.filter(artist_name__icontains=search)
-		.order_by(Lower("artist_name"))[:500]
-	)
-	return render(request, "library/artist_list.html", {"artists": rows, "search": search})
+	artists = list(queries.artists().filter(artist_name__icontains=search).order_by(Lower("artist_name")))
+	ids = [artist.pk for artist in artists]
+
+	# Per-artist facts the filters work on.
+	batches, years = {}, {}
+	for artist_id, batch, year in Album.objects.filter(artist_id__in=ids).values_list("artist_id", "album_batch_date", "album_release_year"):
+		if batch:
+			batches.setdefault(artist_id, set()).add(batch.isoformat())
+		if year:
+			years.setdefault(artist_id, set()).add(str(year))
+	countries = {
+		artist_id: country
+		for artist_id, country in ArtistProfile.objects.filter(artist_id__in=ids, status=EnrichmentStatus.MATCHED)
+		.exclude(country="").values_list("artist_id", "country")
+	}
+	main_genre = {}
+	for artist_id, name in (
+		ArtistFacet.objects.filter(artist_id__in=ids, facet__kind=FacetKind.GENRE)
+		.order_by("-weight", "facet__name").values_list("artist_id", "facet__name")
+	):
+		main_genre.setdefault(artist_id, name)
+	for artist_id, tag in Album.objects.filter(artist_id__in=ids).exclude(album_genre="").order_by("album_release_year").values_list("artist_id", "album_genre"):
+		if artist_id not in main_genre and explorer.split_genres(tag):
+			main_genre[artist_id] = explorer.split_genres(tag)[0]
+	voice = {}
+	for artist_id, instrumental, text in TrackLyrics.objects.filter(
+		track__album__artist_id__in=ids, status=EnrichmentStatus.MATCHED
+	).values_list("track__album__artist_id", "instrumental", "text"):
+		kind = "with voice" if (text and not instrumental) else "instrumental" if instrumental else None
+		if kind == "with voice":
+			voice[artist_id] = "with voice"
+		elif kind and artist_id not in voice:
+			voice[artist_id] = "instrumental"
+
+	for artist in artists:
+		artist.batches = batches.get(artist.pk, set())
+		artist.release_years = years.get(artist.pk, set())
+		artist.country = countries.get(artist.pk) or artist.artist_country
+		artist.main_genre = main_genre.get(artist.pk, "")
+		artist.voice = voice.get(artist.pk, "")
+
+	def album_bucket(count):
+		return "1" if count == 1 else "2-3" if count <= 3 else "4-6" if count <= 6 else "7+"
+
+	filters = [
+		("batch", "Batch", lambda a: a.batches),
+		("country", "Country", lambda a: {a.country} if a.country else set()),
+		("genre", "Main genre", lambda a: {a.main_genre} if a.main_genre else set()),
+		("year", "Release year", lambda a: a.release_years),
+		("albums", "Number of albums", lambda a: {album_bucket(a.album_count)}),
+		("voice", "Voice", lambda a: {a.voice} if a.voice else set()),
+	]
+	chosen = {key: request.GET.get(key, "").strip() for key, _, _ in filters}
+	facets = []
+	for key, label, getter in filters:
+		values = set().union(*(getter(artist) for artist in artists)) if artists else set()
+		if key == "albums":
+			ordered = [v for v in ("1", "2-3", "4-6", "7+") if v in values]
+		elif key == "year":
+			ordered = sorted(values, reverse=True)
+		elif key == "batch":
+			ordered = sorted(values, reverse=True)
+		else:
+			ordered = sorted(values, key=str.casefold)
+		options = [
+			{"value": value, "label": (
+				date.fromisoformat(value).strftime("%-d %b %Y") if key == "batch"
+				else f"{value} albums" if key == "albums" and value != "1" else "1 album" if key == "albums"
+				else value.capitalize() if key == "voice" else value
+			)}
+			for value in ordered
+		]
+		facets.append({"key": key, "label": label, "options": options, "selected": chosen[key]})
+	rows = [
+		artist for artist in artists
+		if all(not chosen[key] or chosen[key] in getter(artist) for key, _, getter in filters)
+	]
+	return render(request, "library/artist_list.html", {
+		"artists": rows[:500],
+		"total": len(rows),
+		"search": search,
+		"facets": facets,
+		"filtered": any(chosen.values()),
+	})
 
 
 def _job_is_about(job, *, artist_id, album_id=None):
@@ -412,6 +492,8 @@ def album_detail(request, album_id):
 			]
 			if entries:
 				credit_groups.append({"label": label, "entries": entries})
+	genres = chips.get(FacetKind.GENRE, [])
+	country = profile.country if profile else ""
 	insight = AlbumInsight.objects.filter(album_id=album_id).first()
 	insight_year = int(insight.release_date[:4]) if insight and insight.release_date[:4].isdigit() else None
 	year = album.album_release_year or (profile.release_year if matched else None) or insight_year
@@ -430,8 +512,10 @@ def album_detail(request, album_id):
 		"player_tracks": playable_tracks,
 		"profile": profile,
 		"matched": matched,
-		"genres": chips.get(FacetKind.GENRE, []),
+		"genres": genres,
 		"credit_groups": credit_groups,
+		"country": country,
+		"country_url": facet_url("country", country) if country else None,
 		"year": year,
 		"decade": decade,
 		"decade_url": facet_url("decade", decade) if decade else None,
@@ -1161,3 +1245,216 @@ def _facet_chips(links):
 		if key not in chips[facet.kind]:
 			chips[facet.kind][key] = {"name": facet.name, "detail": link.detail, "url": facet_url(facet.kind, facet.name)}
 	return {kind: list(values.values()) for kind, values in chips.items()}
+
+
+# ---------------------------------------------------------------------------
+# Edit Tags: album and artist editors that write to the MP3 files
+# ---------------------------------------------------------------------------
+
+EDIT_SALT = "library.edit-tags"
+
+
+def _file_stamp(path):
+	stat = Path(path).stat()
+	return [stat.st_mtime_ns, stat.st_size]
+
+
+def _edit_token(kind, object_id, tracks):
+	files = {str(track.pk): [track.track_file_path, _file_stamp(track.track_file_path)] for track in tracks}
+	return signing.dumps({"kind": kind, "id": object_id, "files": files}, salt=EDIT_SALT)
+
+
+def _check_edit_token(request, kind, object_id):
+	"""{track pk: path} from the signed form token; raises ValueError when stale or tampered."""
+	try:
+		payload = signing.loads(request.POST.get("edit_token", ""), salt=EDIT_SALT, max_age=6 * 3600)
+	except signing.BadSignature as error:
+		raise ValueError("This editor expired. Open Edit Tags again.") from error
+	if payload.get("kind") != kind or payload.get("id") != object_id:
+		raise ValueError("This form belongs to another page. Open Edit Tags again.")
+	files = {}
+	for pk, (path, stamp) in payload["files"].items():
+		if not repository.is_allowed_file(path) or _file_stamp(path) != stamp:
+			raise ValueError(f"{Path(path).name} changed since the editor was opened. Reload Edit Tags and try again.")
+		files[int(pk)] = path
+	return files
+
+
+def _shared_value(values):
+	"""(value, mixed) for one tag across several files."""
+	distinct = sorted({value for value in values})
+	if len(distinct) <= 1:
+		return (distinct[0] if distinct else ""), False
+	return "", True
+
+
+def _save_message(request, result, noun):
+	if not result.files_written:
+		messages.info(request, "No changes to save.")
+		return
+	moved = [
+		f"the new {name}" if count == 1 else f"{count} new {name}s" for count, name in
+		((result.albums_carried, "album"), (result.artists_carried, "artist")) if count
+	]
+	text = f"Edit Tags: saved to {result.files_written} file{pluralize(result.files_written)}"
+	if moved:
+		text += f" · details carried over to {' and '.join(moved)}"
+	messages.success(request, text + ".")
+
+
+def _readable_tracks(queryset):
+	tracks = list(queryset.order_by("track_discnumber", "track_number", Lower("track_title")))
+	for track in tracks:
+		track.readable = bool(track.track_file_path) and repository.is_allowed_file(track.track_file_path)
+		track.tags = tag_editor.read_tags(track.track_file_path) if track.readable else {}
+	return tracks
+
+
+@login_required
+def album_edit_tags(request, album_id):
+	"""Edit Tags for one album: album tags in a header, every track's tags in a table below."""
+	album = get_object_or_404(Album.objects.select_related("artist"), pk=album_id)
+	tracks = _readable_tracks(Track.objects.filter(album=album))
+	readable = [track for track in tracks if track.readable]
+	errors, posted = {}, None
+
+	if request.method == "POST":
+		try:
+			files = _check_edit_token(request, "album", album.pk)
+		except ValueError as error:
+			messages.error(request, str(error))
+			return redirect("library:album-edit-tags", album_id=album.pk)
+		posted = request.POST
+		by_pk = {track.pk: track for track in readable if track.pk in files}
+		edits = {}
+		for track in by_pk.values():
+			values = {key: posted.get(f"t{track.pk}-{key}", track.tags.get(key, "")) for key, _ in tag_editor.TRACK_FIELDS}
+			edits[track.track_file_path] = values
+		for key, _ in tag_editor.ALBUM_FIELDS:
+			header, initial = posted.get(f"h-{key}", ""), posted.get(f"h-{key}-initial", "")
+			if header.strip() == initial.strip():
+				continue  # the header was not touched
+			for track in by_pk.values():
+				values = edits[track.track_file_path]
+				cell_untouched = key not in values or values[key].strip() == track.tags.get(key, "")
+				if cell_untouched:
+					values[key] = header
+		for track in by_pk.values():
+			for key, value in edits[track.track_file_path].items():
+				if value.strip() == track.tags.get(key, ""):
+					continue  # only what was changed is checked; existing gaps never block a save
+				message = tag_editor.validate(key, value)
+				if message:
+					errors[f"t{track.pk}-{key}"] = message
+		if not errors:
+			try:
+				result = tag_editor.save(edits, reimport_paths=[track.track_file_path for track in readable])
+			except tag_editor.TagEditError as error:
+				messages.error(request, str(error))
+			else:
+				_save_message(request, result, "album")
+				if Album.objects.filter(pk=album.pk).exists():
+					return redirect("library:album-detail", album_id=album.pk)
+				new_album = Track.objects.filter(pk__in=result.track_ids).values_list("album_id", flat=True).first()
+				return redirect("library:album-detail", album_id=new_album) if new_album else redirect("library:album-list")
+		else:
+			messages.error(request, f"{len(errors)} value{pluralize(len(errors))} need{'' if len(errors) != 1 else 's'} fixing before saving.")
+
+	# What the folder layout says (ARTIST - ALBUM, LABEL), offered when a tag is empty.
+	from_folder = derived_tags(readable[0].track_file_path) if readable else {}
+	from_folder["albumartist"] = from_folder.get("artist", "")
+	header = []
+	for key, label in tag_editor.ALBUM_FIELDS:
+		value, mixed = _shared_value(track.tags.get(key, "") for track in readable)
+		suggested = from_folder.get(key, "") if not value and not mixed else ""
+		header.append({
+			"key": key, "label": label, "initial": value, "mixed": mixed, "suggested": suggested,
+			"value": posted.get(f"h-{key}", value) if posted else value,
+			"in_table": key not in tag_editor.ALBUM_ONLY,
+		})
+	rows = []
+	for track in tracks:
+		cells = []
+		for key, label in tag_editor.TRACK_FIELDS:
+			initial = track.tags.get(key, "")
+			name = f"t{track.pk}-{key}"
+			cells.append({
+				"key": key, "label": label, "name": name, "initial": initial,
+				"value": posted.get(name, initial) if posted else initial, "error": errors.get(name),
+			})
+		rows.append({"track": track, "cells": cells, "file_name": Path(track.track_file_path).name if track.track_file_path else ""})
+
+	return render(request, "library/album_edit_tags.html", {
+		"album": album,
+		"header": header,
+		"columns": tag_editor.TRACK_FIELDS,
+		"rows": rows,
+		"readable_count": len(readable),
+		"missing_count": len(tracks) - len(readable),
+		"edit_token": _edit_token("album", album.pk, readable),
+		"importing": is_importing(),
+	}, status=400 if errors else 200)
+
+
+@login_required
+def artist_edit_tags(request, artist_id):
+	"""Edit Tags for one artist: name, country and formed year, written to all of the artist's files."""
+	artist = get_object_or_404(Artist, pk=artist_id)
+	tracks = _readable_tracks(Track.objects.filter(album__artist=artist))
+	readable = [track for track in tracks if track.readable]
+	errors, posted = {}, None
+
+	if request.method == "POST":
+		try:
+			files = _check_edit_token(request, "artist", artist.pk)
+		except ValueError as error:
+			messages.error(request, str(error))
+			return redirect("library:artist-edit-tags", artist_id=artist.pk)
+		posted = request.POST
+		targets = [track for track in readable if track.pk in files]
+		edits = {track.track_file_path: {} for track in targets}
+		for key, _ in tag_editor.ARTIST_FIELDS:
+			value, initial = posted.get(f"h-{key}", ""), posted.get(f"h-{key}-initial", "")
+			if value.strip() == initial.strip():
+				continue
+			message = tag_editor.validate(key, value)
+			if message:
+				errors[f"h-{key}"] = message
+				continue
+			for track in targets:
+				edits[track.track_file_path][key] = value
+				# An album artist that named this artist follows the new name.
+				if key == "artist" and track.tags.get("albumartist", "").casefold() == track.tags.get("artist", "").casefold() != "":
+					edits[track.track_file_path]["albumartist"] = value
+		if not errors:
+			try:
+				result = tag_editor.save({path: values for path, values in edits.items() if values},
+				                         reimport_paths=[track.track_file_path for track in readable])
+			except tag_editor.TagEditError as error:
+				messages.error(request, str(error))
+			else:
+				_save_message(request, result, "artist")
+				if Artist.objects.filter(pk=artist.pk).exists():
+					return redirect("library:artist-detail", artist_id=artist.pk)
+				new_artist = Track.objects.filter(pk__in=result.track_ids).values_list("album__artist_id", flat=True).first()
+				return redirect("library:artist-detail", artist_id=new_artist) if new_artist else redirect("library:artist-list")
+		else:
+			messages.error(request, f"{len(errors)} value{pluralize(len(errors))} need{'' if len(errors) != 1 else 's'} fixing before saving.")
+
+	fields = []
+	for key, label in tag_editor.ARTIST_FIELDS:
+		value, mixed = _shared_value(track.tags.get(key, "") for track in readable)
+		fields.append({
+			"key": key, "label": label, "initial": value, "mixed": mixed,
+			"value": posted.get(f"h-{key}", value) if posted else value, "error": errors.get(f"h-{key}"),
+		})
+	albums = queries.albums().filter(artist_id=artist.pk).order_by("album_release_year", Lower("album_name"))
+	return render(request, "library/artist_edit_tags.html", {
+		"artist": artist,
+		"fields": fields,
+		"albums": albums,
+		"readable_count": len(readable),
+		"missing_count": len(tracks) - len(readable),
+		"edit_token": _edit_token("artist", artist.pk, readable),
+		"importing": is_importing(),
+	}, status=400 if errors else 200)

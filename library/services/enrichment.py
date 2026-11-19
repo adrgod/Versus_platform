@@ -199,13 +199,37 @@ def _mark_error(model, note, **owner):
         pass  # e.g. the artist or album was deleted by a library scan meanwhile
 
 
+def _artist_tags_missing(profile, artist):
+    """Common tags the artist still lacks (country, genres); empty when it is complete."""
+    missing = []
+    if not (profile.country or artist.artist_country):
+        missing.append("country")
+    if not ArtistFacet.objects.filter(artist=artist, source=SOURCE, facet__kind=FacetKind.GENRE).exists():
+        missing.append("genre")
+    return missing
+
+
 def enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=None):
+    """Look an artist up, then its albums.
+
+    For an album-only run the artist's stored tags come first: when it is already matched and
+    has its country and genres, the artist search and detail requests are skipped (only its
+    release groups are fetched, to match the albums) and the albums inherit the artist's tags.
+    """
     stats = stats or EnrichmentStats()
     profile, _ = ArtistProfile.objects.get_or_create(artist=artist)
     albums = list(artist.album_set.all())
     titles = [album.album_name for album in albums]
 
-    if profile.id_set_manually and profile.external_id:
+    reuse_artist = (
+        bool(only_album_ids)
+        and profile.status == EnrichmentStatus.MATCHED
+        and bool(profile.external_id)
+        and not _artist_tags_missing(profile, artist)
+    )
+    if reuse_artist:
+        release_groups = client.release_groups(profile.external_id)
+    elif profile.id_set_manually and profile.external_id:
         mbid, score, note = profile.external_id, Decimal("1.00"), "MusicBrainz ID set by hand"
         release_groups = client.release_groups(mbid)
     else:
@@ -219,15 +243,16 @@ def enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=No
             stats.artists_not_found += 1
             return profile
 
-    data = client.artist(mbid)
-    if data is None:
-        _store_artist_not_found(profile, f"MusicBrainz has no artist {mbid}")
-        stats.artists_not_found += 1
-        return profile
+    if not reuse_artist:
+        data = client.artist(mbid)
+        if data is None:
+            _store_artist_not_found(profile, f"MusicBrainz has no artist {mbid}")
+            stats.artists_not_found += 1
+            return profile
 
-    with transaction.atomic():
-        _store_artist(profile, artist, data, score, note, release_groups, albums)
-    stats.artists_matched += 1
+        with transaction.atomic():
+            _store_artist(profile, artist, data, score, note, release_groups, albums)
+        stats.artists_matched += 1
 
     for album in albums:
         if only_album_ids and album.pk not in only_album_ids:
@@ -246,6 +271,9 @@ def enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=No
             stats.albums_matched += 1
         else:
             stats.albums_not_found += 1
+    for album in albums:
+        if not only_album_ids or album.pk in only_album_ids:
+            inherit_artist_tags(album)
     return profile
 
 
@@ -464,6 +492,7 @@ def enrich_album(client, album, release_groups):
         profile.enriched_at = timezone.now()
         profile.save()
         AlbumFacet.objects.filter(album=album, source=SOURCE).delete()
+        inherit_artist_tags(album)
         return False
 
     release = _richest_release(client, group["id"])
@@ -494,7 +523,45 @@ def enrich_album(client, album, release_groups):
                  for name, count in _top_genres([{"name": n, "count": c} for n, c in genres.items()])]
         links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], 0) for credit in credits]
         link_facets(AlbumFacet, "album", album, links)
+    inherit_artist_tags(album)
     return True
+
+
+INHERITED = "from artist"
+
+
+def inherit_artist_tags(album):
+    """Copy the tags an album shares with its artist (genres, country) onto the album itself.
+
+    No network: it reads what the artist already has. An album's own genres are never
+    replaced; genres copied earlier are refreshed when the artist's change.
+    """
+    artist = album.artist
+    artist_profile = ArtistProfile.objects.filter(artist=artist, status=EnrichmentStatus.MATCHED).first()
+    country = (artist_profile.country if artist_profile else "") or artist.artist_country
+    genres = list(
+        ArtistFacet.objects.filter(artist=artist, source=SOURCE, facet__kind=FacetKind.GENRE)
+        .select_related("facet").order_by("-weight", "facet__name")
+    )
+    profile, _ = AlbumProfile.objects.get_or_create(album=album)
+    if profile.country != (country or ""):
+        profile.country = country or ""
+        profile.save(update_fields=["country"])
+
+    own = AlbumFacet.objects.filter(album=album, facet__kind=FacetKind.GENRE).exclude(detail=INHERITED)
+    if not own.exists():
+        AlbumFacet.objects.filter(album=album, facet__kind=FacetKind.GENRE, detail=INHERITED).delete()
+        link_facets(AlbumFacet, "album", album, [
+            (FacetKind.GENRE, link.facet.name, "", INHERITED, link.weight) for link in genres
+        ])
+        if genres and not album.album_genre:
+            names = []
+            for link in genres:
+                if len(", ".join(names + [link.facet.name])) > 50:
+                    break
+                names.append(link.facet.name)
+            if names:
+                Album.objects.filter(pk=album.pk).update(album_genre=", ".join(names))
 
 
 def _richest_release(client, release_group_id, tries=3):

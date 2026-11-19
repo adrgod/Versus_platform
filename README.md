@@ -8,12 +8,19 @@ The same four names are used on every page, in messages and in the commands belo
 | Action | What it does | Where |
 | --- | --- | --- |
 | **Import Data** | Scans the source folder and brings new music into the catalogue (reads every file's MP3 tags). | Overview |
+| **Edit Tags** | Change tags by hand: album tags plus a table of every track, or an artist's name, country and formed year. Written to the MP3 files on Save. | Artist and album pages |
 | **Read Local MP3 Tags** | Reads the MP3 tags (and folder/file-name details) of one artist's or album's files again. | Artist and album pages |
 | **Lookup Details Online** | Looks artists and albums up on MusicBrainz. | Lookup & Enrich page, artist and album pages |
 | **Enrich Data with AI** | Reads .txt/.nfo/.pdf notes and lyrics, then lets a local AI model extract facts. | Lookup & Enrich page, artist and album pages |
 
 A batch is named after the closest `YYYYMMDD` folder above the files (e.g. "Batch 13 Oct 2026"), whatever
-the layout below it.
+the layout below it. Empty tags are filled from the folders when the path is
+`YYYYMMDD/LABEL/ARTIST - ALBUM/[CD1/]01 - Title.mp3` (most common; `_-_` also works) or
+`YYYYMMDD/LABEL/ARTIST/ALBUM/[CD1/]01 - Title.mp3`.
+
+When changed tags turn an album or artist into a new catalogue entry (name, year, label or artist changed),
+everything the old entry had is carried over to the new one: online details, AI enrichment, liner notes,
+lyrics, cover, batch and first-loaded date.
 
 # Lookup Details Online (MusicBrainz)
 

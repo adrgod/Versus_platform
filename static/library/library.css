@@ -331,6 +331,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .data-table tbody tr:hover { background: var(--surface-muted); }
 .table-primary { display: block; color: var(--ink); font-size: 14px; font-weight: 550; }
 .table-secondary { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }
+.table-secondary a { color: inherit; text-decoration: none; }
+.table-secondary a:hover { text-decoration: underline; }
 .row-arrow { text-align: right; color: var(--subtle) !important; }
 tr:hover .row-arrow { color: var(--accent-text) !important; }
 .empty-cell { padding: 36px !important; color: var(--muted) !important; text-align: center; }
@@ -838,3 +840,61 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 
 /* Completeness: batch name + folder */
 .completion-batch > summary .batch-folder { color: var(--subtle); font-family: var(--mono); font-size: 12px; }
+
+/* ---- Edit Tags (album & artist editors) ----------------------------------- */
+.editor-warning { margin: 0 0 20px; }
+.editor-card { margin-bottom: 28px; padding: 18px 20px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.editor-card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 6px 24px; margin-bottom: 16px; }
+.editor-card-head h2 { margin: 2px 0 0; font-size: 16px; font-weight: 650; }
+.editor-card-head small { max-width: 520px; color: var(--muted); font-size: 13px; }
+.editor-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px 16px; }
+.editor-field { display: grid; gap: 5px; align-content: start; }
+.editor-field > span { color: var(--ink-2); font-size: 13px; font-weight: 550; }
+.editor-field input { width: 100%; min-height: 38px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface); box-shadow: var(--shadow-sm); font-size: 14px; transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+.editor-field input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+.editor-field input::placeholder { color: var(--subtle); font-style: italic; }
+.editor-field small { color: var(--subtle); font-size: 12px; }
+.editor-field.is-changed input { border-color: var(--accent-border); background: var(--accent-soft); }
+.editor-field.has-error input { border-color: var(--danger); }
+
+.editor-tracks { margin-bottom: 20px; }
+.edit-table { min-width: 980px; }
+.edit-table th, .edit-table td { padding: 0; }
+.edit-table th { padding: 10px 8px; }
+.edit-table td { position: relative; height: 44px; }
+.edit-table td.col-length, .edit-table td.col-file { padding: 0 10px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.edit-table .col-discnumber, .edit-table .col-tracknumber { width: 56px; }
+.edit-table .col-title { min-width: 220px; }
+.edit-table .col-date { width: 110px; }
+.edit-table .col-length { width: 64px; }
+.edit-table .col-file { max-width: 200px; }
+.cell-file { display: block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+.cell-input { width: 100%; height: 44px; padding: 0 8px; border: 1px solid transparent; border-radius: 0; color: var(--ink); background: transparent; font-size: 14px; transition: background .12s ease, border-color .12s ease; }
+.col-tracknumber .cell-input, .col-discnumber .cell-input { font-variant-numeric: tabular-nums; }
+.col-title .cell-input { font-weight: 550; }
+.cell-input::placeholder { color: var(--subtle); }
+.cell-input:hover { background: var(--surface-hover); }
+.cell-input:focus { position: relative; z-index: 1; border-color: var(--accent); outline: none; background: var(--surface); box-shadow: 0 0 0 3px var(--accent-ring); }
+.edit-table td.is-changed .cell-input { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.edit-table td.is-changed .cell-input:focus { box-shadow: 0 0 0 3px var(--accent-ring), inset 3px 0 0 var(--accent); }
+.edit-table td.has-error .cell-input { border-color: var(--danger); background: var(--danger-soft); }
+.cell-error { position: absolute; z-index: 2; top: calc(100% - 4px); left: 4px; padding: 2px 6px; border-radius: 4px; color: #fff; background: var(--danger); font-size: 11px; white-space: nowrap; pointer-events: none; }
+.edit-table tr.is-missing td { opacity: .5; }
+.cell-static { display: block; padding: 0 9px; color: var(--muted); font-size: 14px; }
+.edit-table tbody tr:hover { background: transparent; }
+
+.editor-savebar { position: sticky; z-index: 15; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-top: 8px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--shadow-lg); backdrop-filter: blur(8px); }
+.editor-savebar [data-change-count] { color: var(--muted); font-size: 14px; }
+.editor-savebar [data-change-count].has-changes { color: var(--accent-text); font-weight: 600; }
+@media (max-width: 620px) {
+  .editor-savebar { bottom: calc(136px + env(safe-area-inset-bottom, 0px)); }
+  .editor-fields { grid-template-columns: 1fr 1fr; }
+}
+
+.filter-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end; gap: 16px 18px; margin-bottom: 32px; padding: 18px 20px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.filter-field { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.filter-field select { width: 100%; padding: 9px 34px 9px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-muted) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E") right 12px center/12px no-repeat; color: var(--ink); font-size: 14px; font-weight: 450; letter-spacing: 0; text-transform: none; appearance: none; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
+.filter-field select:hover { border-color: var(--accent-border); }
+.filter-field select:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.filter-field select:has(option:checked:not([value=""])) { border-color: var(--accent-border); background-color: var(--accent-soft); font-weight: 600; }
+.filter-bar .link-button { justify-self: start; align-self: end; padding: 9px 4px; }

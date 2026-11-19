@@ -137,6 +137,7 @@ class AlbumProfile(models.Model):
     rating = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
     rating_votes = models.IntegerField(default=0)
     credits = models.JSONField(default=list, blank=True)
+    country = models.CharField(max_length=100, blank=True)  # copied from the artist
     enriched_at = models.DateTimeField(null=True, blank=True)
 
 

@@ -36,5 +36,7 @@ urlpatterns = [
     path("quality/", views.quality_report, name="quality-report"),
     path("quality/completeness/", views.completeness_report, name="completeness-report"),
     path("tracks/<int:track_id>/edit/", views.edit_track_tags, name="edit-tags"),
+    path("albums/<int:album_id>/edit/", views.album_edit_tags, name="album-edit-tags"),
+    path("artists/<int:artist_id>/edit/", views.artist_edit_tags, name="artist-edit-tags"),
     path("tracks/<int:track_id>/confirm/", views.confirm_tag_edit, name="confirm-tag-edit"),
 ]

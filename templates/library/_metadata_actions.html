@@ -1,9 +1,10 @@
 {% comment %}
-The three metadata actions for one artist or album, named the same everywhere:
-Read Local MP3 Tags · Lookup Details Online · Enrich Data with AI.
+The metadata actions for one artist or album, named the same everywhere:
+Edit Tags · Read Local MP3 Tags · Lookup Details Online · Enrich Data with AI.
 Include with: scope="album_id"|"artist_id", object_id, noun ("album"|"artist").
 {% endcomment %}
 <div class="metadata-actions" role="group" aria-label="Update this {{ noun }}">
+  <a class="button button-light" href="{% if scope == "album_id" %}{% url 'library:album-edit-tags' object_id %}{% else %}{% url 'library:artist-edit-tags' object_id %}{% endif %}" title="Change this {{ noun }}'s tags by hand">{% include "library/_icon.html" with name="pencil" %}Edit Tags</a>
   <form method="post" action="{% url 'library:read-local-tags' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}">
     <button class="button button-light" type="submit" {% if importing %}disabled title="Import Data is running"{% else %}title="Read this {{ noun }}'s MP3 files again and update the catalogue"{% endif %}>{% include "library/_icon.html" with name="tag" %}Read Local MP3 Tags</button>
   </form>

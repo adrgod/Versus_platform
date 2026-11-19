@@ -1,6 +1,7 @@
 """Fills empty ID3 tags in MP3 files from the batch folder layout.
 
-Layout: ``.../YYYYMMDD/PUBLISHER/BAND/ALBUM/[CDn/...]/01 - Track Name.mp3``.
+Layout: ``.../YYYYMMDD/LABEL/ARTIST - ALBUM/[CDn/...]/01 - Track Name.mp3`` (most common)
+or ``.../YYYYMMDD/LABEL/ARTIST/ALBUM/[CDn/...]/01 - Track Name.mp3``; see files_scanner.batch_layout.
 Only tags that are empty in the file are written (file by file), and only for
 files whose path follows that layout. Nothing is backed up on disk: the file's
 original tag block is kept in memory while it is written and put back at once

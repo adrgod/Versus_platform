@@ -1,0 +1,43 @@
+{% extends "library/base.html" %}
+{% block title %}Edit Tags · {{ album.album_name }}{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:album-list' %}">Albums</a><span>/</span><a href="{% url 'library:artist-detail' album.artist_id %}">{{ album.artist.artist_name }}</a><span>/</span><a href="{% url 'library:album-detail' album.pk %}">{{ album.album_name }}</a><span>/</span>Edit Tags</div>
+<form class="tag-editor" method="post" data-tag-editor>{% csrf_token %}<input type="hidden" name="edit_token" value="{{ edit_token }}">
+<section class="page-heading">
+  <div><span class="eyebrow">EDIT TAGS / ALBUM</span><h1>{{ album.album_name }}</h1><p class="subheading">Click any value to change it. Nothing is written until you press Save; then the MP3 files are updated and read back into the catalogue.</p></div>
+  <div class="heading-actions"><a class="button button-light" href="{% url 'library:album-detail' album.pk %}">Cancel</a><button class="button button-primary" type="submit" data-save {% if importing %}disabled title="Import Data is running"{% endif %}>{% include "library/_icon.html" with name="save" %}Save</button></div>
+</section>
+{% if missing_count %}<div class="preview-warning editor-warning"><strong>{{ missing_count }} file{{ missing_count|pluralize }} not found</strong><span>Those tracks are shown greyed out and cannot be edited. Run Import Data to tidy them up.</span></div>{% endif %}
+
+<section class="editor-card" aria-labelledby="album-tags-title">
+  <div class="editor-card-head"><div><span class="eyebrow">ALBUM TAGS</span><h2 id="album-tags-title">Applies to all {{ readable_count }} track{{ readable_count|pluralize }}</h2></div><small>A value typed here replaces that tag on every track{% if header %} — the matching column below follows it{% endif %}.</small></div>
+  <div class="editor-fields">
+    {% for field in header %}<label class="editor-field">
+      <span>{{ field.label }}</span>
+      <input type="text" name="h-{{ field.key }}" value="{{ field.value }}" data-initial="{{ field.initial }}" {% if field.in_table %}data-header-for="{{ field.key }}"{% endif %} placeholder="{% if field.mixed %}Mixed — each track keeps its own{% elif field.suggested %}Folder says: {{ field.suggested }}{% else %}Empty{% endif %}" autocomplete="off" spellcheck="false">
+      <input type="hidden" name="h-{{ field.key }}-initial" value="{{ field.initial }}">
+      {% if field.mixed %}<small>Tracks differ</small>{% elif field.suggested %}<small>Empty in the files · <button type="button" class="link-button" data-fill="{{ field.suggested }}">Use “{{ field.suggested }}”</button></small>{% endif %}
+    </label>{% endfor %}
+  </div>
+</section>
+
+<section class="editor-tracks" aria-labelledby="track-tags-title">
+  <div class="section-heading"><div><span class="eyebrow">TRACK TAGS</span><h2 id="track-tags-title">Tracks</h2></div><span class="genre-total">{{ rows|length }} TRACK{{ rows|length|pluralize:"S" }}</span></div>
+  <div class="table-wrap"><table class="data-table edit-table">
+    <thead><tr>{% for key, label in columns %}<th class="col-{{ key }}">{{ label }}</th>{% endfor %}<th class="col-length">Time</th><th class="col-file">File</th></tr></thead>
+    <tbody>
+    {% for row in rows %}<tr id="track-{{ row.track.pk }}" class="{% if not row.track.readable %}is-missing{% endif %}">
+      {% for cell in row.cells %}<td class="col-{{ cell.key }}{% if cell.error %} has-error{% endif %}">{% if row.track.readable %}<input class="cell-input" type="text" name="{{ cell.name }}" value="{{ cell.value }}" data-initial="{{ cell.initial }}" data-col="{{ cell.key }}" aria-label="{{ cell.label }} of {{ row.track.track_title }}" placeholder="—" autocomplete="off" spellcheck="false"{% if cell.error %} aria-invalid="true" title="{{ cell.error }}"{% endif %}>{% if cell.error %}<small class="cell-error">{{ cell.error }}</small>{% endif %}{% else %}<span class="cell-static">{{ cell.value|default:"—" }}</span>{% endif %}</td>{% endfor %}
+      <td class="col-length">{{ row.track.track_duration|floatformat:0 }}s</td>
+      <td class="col-file"><span class="cell-file" title="{{ row.track.track_file_path }}">{% if row.track.readable %}{{ row.file_name }}{% else %}File not found{% endif %}</span></td>
+    </tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<div class="editor-savebar">
+  <span data-change-count>No changes yet</span>
+  <div class="heading-actions"><a class="button button-light" href="{% url 'library:album-detail' album.pk %}">Cancel</a><button class="button button-primary" type="submit" data-save {% if importing %}disabled title="Import Data is running"{% endif %}>{% include "library/_icon.html" with name="save" %}Save</button></div>
+</div>
+</form>
+{% endblock %}

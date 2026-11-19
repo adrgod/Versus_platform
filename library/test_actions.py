@@ -241,3 +241,140 @@ class CarryOverTests(LocalTagsTestCase):
         self.assertEqual(Album.objects.get().pk, existing.pk)
         self.assertEqual(AlbumProfile.objects.get().external_id, "its-own")
         self.assertEqual(Album.objects.get().insight.summary, "A record about the Highlands.")  # gaps still filled
+
+
+class FolderLayoutTests(TestCase):
+    def test_artist_dash_album_folder_is_the_common_layout(self):
+        from library.services.files_scanner import album_folder, derived_tags
+        self.assertEqual(derived_tags("/m/20261013/Season of Mist/SAOR_-_Caledonia/03 - Carved In Stone.mp3"), {
+            "publisher": "Season of Mist", "artist": "SAOR", "album": "Caledonia",
+            "tracknumber": "3", "title": "Carved In Stone",
+        })
+        path = "/m/20261013/Label/Band - Album/CD2/01 - Song.mp3"
+        self.assertEqual(derived_tags(path)["discnumber"], "2")
+        self.assertEqual(derived_tags(path)["album"], "Album")
+        self.assertEqual(album_folder(path).name, "Band - Album")
+
+    def test_only_the_first_dash_splits_artist_from_album(self):
+        from library.services.files_scanner import split_artist_album
+        self.assertEqual(split_artist_album("Band - Album - Deluxe Edition"), ("Band", "Album - Deluxe Edition"))
+        self.assertEqual(split_artist_album("Spider-Man_-_Web_Songs"), ("Spider-Man", "Web Songs"))
+        self.assertIsNone(split_artist_album("Dead_Space_Enigma"))
+
+    def test_artist_and_album_folders_still_work(self):
+        from library.services.files_scanner import derived_tags
+        self.assertEqual(derived_tags("/m/20240315/Label/Band/Album/01 - Song.mp3")["album"], "Album")
+        self.assertEqual(derived_tags("/m/20240315/Label/Dead_Space_Enigma/01 - Song.mp3"), {})
+
+
+class EditTagsTests(LocalTagsTestCase):
+    def setUp(self):
+        super().setUp()
+        user = get_user_model().objects.create_user("editor", password="test-password")
+        self.web = Client()
+        self.web.force_login(user)
+        self.tracks = list(Track.objects.order_by("track_number"))
+
+    def open_album_editor(self):
+        response = self.web.get(reverse("library:album-edit-tags", args=[self.album.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def album_form(self, response, **changes):
+        """The editor's form as the browser would send it, with ``changes`` applied."""
+        data = {"edit_token": response.context["edit_token"]}
+        for field in response.context["header"]:
+            data[f"h-{field['key']}"] = field["value"]
+            data[f"h-{field['key']}-initial"] = field["initial"]
+        for row in response.context["rows"]:
+            for cell in row["cells"]:
+                data[cell["name"]] = cell["value"]
+        data.update(changes)
+        return data
+
+    def test_album_page_links_to_the_editor_which_is_its_own_page(self):
+        album_page = self.web.get(reverse("library:album-detail", args=[self.album.pk])).content.decode()
+        self.assertIn(reverse("library:album-edit-tags", args=[self.album.pk]), album_page)
+        editor = self.open_album_editor().content.decode()
+        self.assertIn("ALBUM TAGS", editor)
+        self.assertIn(f'name="t{self.tracks[0].pk}-title"', editor)
+        self.assertIn("Save", editor)
+
+    def test_header_and_cell_edits_are_written_to_the_files(self):
+        AlbumProfile.objects.create(album=self.album, status="matched", external_id="album-mbid")
+        response = self.open_album_editor()
+        first = self.tracks[0]
+        data = self.album_form(response, **{"h-album": "Caledonia (Deluxe)", "h-genre": "Folk Metal",
+                                            f"t{first.pk}-title": "Aura", f"t{first.pk}-genre": "Folk Metal"})
+        # The browser's script copies a header value into its column; without it the server does the same.
+        response = self.web.post(reverse("library:album-edit-tags", args=[self.album.pk]), data, follow=True)
+
+        from library.services.tag_editor import read_tags
+        self.assertEqual([read_tags(path)["album"] for path in self.files], ["Caledonia (Deluxe)"] * 2)
+        self.assertEqual([read_tags(path)["genre"] for path in self.files], ["Folk Metal"] * 2)
+        self.assertEqual(read_tags(self.files[0])["title"], "Aura")
+        album = Album.objects.get()
+        self.assertEqual(album.album_name, "Caledonia (Deluxe)")
+        self.assertEqual(album.profile.external_id, "album-mbid")  # carried over to the new entry
+        self.assertRedirects(response, reverse("library:album-detail", args=[album.pk]))
+        self.assertContains(response, "Edit Tags: saved to 2 files · details carried over to the new album.")
+
+    def test_bad_values_are_refused_and_nothing_is_written(self):
+        response = self.open_album_editor()
+        before = self.files[0].read_bytes()
+        data = self.album_form(response, **{f"t{self.tracks[0].pk}-tracknumber": "first"})
+        response = self.web.post(reverse("library:album-edit-tags", args=[self.album.pk]), data)
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Use a number, like 3 or 3/12.", status_code=400)
+        self.assertEqual(self.files[0].read_bytes(), before)
+
+    def test_a_file_changed_since_opening_the_editor_is_not_overwritten(self):
+        response = self.open_album_editor()
+        self.tag(self.files[0], title="Changed elsewhere", number=1)
+        data = self.album_form(response, **{f"t{self.tracks[0].pk}-title": "Mine"})
+        response = self.web.post(reverse("library:album-edit-tags", args=[self.album.pk]), data, follow=True)
+        self.assertContains(response, "changed since the editor was opened")
+        from library.services.tag_editor import read_tags
+        self.assertEqual(read_tags(self.files[0])["title"], "Changed elsewhere")
+
+    def test_a_failure_puts_every_file_back(self):
+        from library.services import tag_editor
+        originals = [path.read_bytes() for path in self.files]
+        real_write = tag_editor._write
+        calls = []
+
+        def flaky(path, changes):
+            calls.append(path)
+            if len(calls) == 2:
+                raise OSError("disk full")
+            real_write(path, changes)
+
+        with patch.object(tag_editor, "_write", flaky):
+            with self.assertRaises(tag_editor.TagEditError):
+                tag_editor.save({str(path): {"genre": "Folk"} for path in self.files})
+        self.assertEqual([path.read_bytes() for path in self.files], originals)
+
+    def test_artist_editor_writes_name_country_and_formed_year(self):
+        from library.models import ArtistProfile
+        ArtistProfile.objects.create(artist=self.album.artist, status="matched", external_id="artist-mbid")
+        url = reverse("library:artist-edit-tags", args=[self.album.artist_id])
+        response = self.web.get(url)
+        self.assertEqual(response.status_code, 200)
+        data = {"edit_token": response.context["edit_token"]}
+        for field in response.context["fields"]:
+            data[f"h-{field['key']}-initial"] = field["initial"]
+        data.update({"h-artist": "Saor Band", "h-artist_country": "Scotland", "h-artist_formed_year": "2013"})
+        self.web.post(url, data)
+
+        artist = Artist.objects.get()
+        self.assertEqual((artist.artist_name, artist.artist_country, artist.artist_formed_year), ("Saor Band", "Scotland", 2013))
+        self.assertEqual(artist.profile.external_id, "artist-mbid")
+        from library.services.tag_editor import read_tags
+        self.assertEqual(read_tags(self.files[1])["artist_country"], "Scotland")
+
+    def test_artist_editor_refuses_a_bad_year(self):
+        url = reverse("library:artist-edit-tags", args=[self.album.artist_id])
+        response = self.web.get(url)
+        data = {"edit_token": response.context["edit_token"], "h-artist_formed_year": "around 2010", "h-artist_formed_year-initial": ""}
+        response = self.web.post(url, data)
+        self.assertContains(response, "Use a year, like 1994.", status_code=400)
