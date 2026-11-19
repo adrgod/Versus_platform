@@ -898,3 +898,24 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .filter-field select:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .filter-field select:has(option:checked:not([value=""])) { border-color: var(--accent-border); background-color: var(--accent-soft); font-weight: 600; }
 .filter-bar .link-button { justify-self: start; align-self: end; padding: 9px 4px; }
+
+.group-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 20px; }
+.group-tabs > span { margin-right: 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.group-tabs a { padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--ink-2); font-size: 13px; text-decoration: none; transition: border-color .15s ease, background .15s ease; }
+.group-tabs a:hover { border-color: var(--accent-border); background: var(--surface-muted); }
+.group-tabs a.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.completeness-meter { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; white-space: nowrap; }
+.completeness-meter .quality-meter { width: 72px; margin-right: 0; background: var(--line-strong); }
+.completeness-meter b { min-width: 3.2em; color: var(--ink-2); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.completion-batch > summary span.completeness-meter, .completion-artist > summary span.completeness-meter { margin-left: auto; color: inherit; font-size: inherit; }
+.completeness-meter + span, .completeness-meter + small { margin-left: 0 !important; }
+.track-percent { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.detail-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.detail-value { min-height: 24px; margin: 8px 0 0; font-size: 15px; font-weight: 550; overflow-wrap: anywhere; }
+.detail-value a:hover { color: var(--accent-text); }
+.detail-more { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.credit-group.is-empty { background: repeating-linear-gradient(135deg, transparent 0 8px, var(--surface-muted) 8px 16px); }
+
+.data-source { display: block; margin-top: 6px; color: var(--subtle); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.data-source::before { content: "Source · "; opacity: .7; }

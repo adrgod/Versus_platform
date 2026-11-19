@@ -521,7 +521,7 @@ def enrich_album(client, album, release_groups):
             genres[genre["name"]] += genre.get("count", 0)
         links = [(FacetKind.GENRE, name, "", "", count)
                  for name, count in _top_genres([{"name": n, "count": c} for n, c in genres.items()])]
-        links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], 0) for credit in credits]
+        links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], credit.get("count", 0)) for credit in credits]
         link_facets(AlbumFacet, "album", album, links)
     inherit_artist_tags(album)
     return True
@@ -587,18 +587,21 @@ def _credits(release):
 
     credits = {}
 
-    def add(kind, name, role, mbid=""):
+    def add(kind, name, role, mbid="", **extra):
         key = (kind, name.casefold())
         entry = credits.setdefault(key, {"kind": str(kind), "name": name, "mbid": mbid, "roles": []})
         if role and role not in entry["roles"]:
             entry["roles"].append(role)
+        for field_name, value in extra.items():
+            entry[field_name] = value or entry.get(field_name, 0 if field_name == "count" else "")
 
     for relation in relations:
         relation_type = relation.get("type", "")
         attributes = [a for a in relation.get("attributes") or [] if a not in NOT_INSTRUMENTS]
         if relation.get("target-type") == "place" and relation_type in PLACE_CREDIT_TYPES:
             place = relation.get("place") or {}
-            add(FacetKind.STUDIO, place.get("name", ""), PLACE_CREDIT_TYPES[relation_type], place.get("id", ""))
+            add(FacetKind.STUDIO, place.get("name", ""), PLACE_CREDIT_TYPES[relation_type], place.get("id", ""),
+                area=(place.get("area") or {}).get("name", ""))
         elif relation.get("target-type") == "artist" and relation_type in ARTIST_CREDIT_TYPES:
             person = relation.get("artist") or {}
             kind, role = ARTIST_CREDIT_TYPES[relation_type]
@@ -608,6 +611,30 @@ def _credits(release):
                     add(kind, person.get("name", ""), _clean_instrument(attribute), person.get("id", ""))
             else:
                 add(kind, person.get("name", ""), role, person.get("id", ""))
+    # Writers sit on the works the recordings perform; count the works each person wrote.
+    written = {FacetKind.COMPOSER: Counter(), FacetKind.LYRICIST: Counter()}
+    names = {}
+    seen_works = set()
+    for medium in release.get("media") or []:
+        for track in medium.get("tracks") or []:
+            for relation in (track.get("recording") or {}).get("relations") or []:
+                work = relation.get("work") if relation.get("target-type") == "work" else None
+                if not work or work.get("id") in seen_works:
+                    continue
+                seen_works.add(work.get("id"))
+                for part in work.get("relations") or []:
+                    person = part.get("artist") or {}
+                    if part.get("target-type") != "artist" or not person.get("name"):
+                        continue
+                    kinds = {"composer": [FacetKind.COMPOSER], "lyricist": [FacetKind.LYRICIST],
+                             "writer": [FacetKind.COMPOSER, FacetKind.LYRICIST]}.get(part.get("type"), [])
+                    for kind in kinds:
+                        written[kind][person["name"]] += 1
+                        names[person["name"]] = person.get("id", "")
+    for kind, counter in written.items():
+        for name, count in counter.items():
+            add(kind, name, kind.label.lower(), names[name], count=count)
+
     for label_info in release.get("label-info") or []:
         label = label_info.get("label") or {}
         if label.get("name"):
@@ -615,7 +642,8 @@ def _credits(release):
 
     order = [kind.value for kind in FacetKind]
     return [
-        {"kind": entry["kind"], "name": entry["name"], "mbid": entry["mbid"], "role": ", ".join(entry["roles"])}
+        {"kind": entry["kind"], "name": entry["name"], "mbid": entry["mbid"], "role": ", ".join(entry["roles"]),
+         "area": entry.get("area", ""), "count": entry.get("count", 0)}
         for entry in sorted(credits.values(), key=lambda e: (order.index(e["kind"]), e["name"].casefold()))
         if entry["name"]
     ]

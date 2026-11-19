@@ -23,13 +23,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from library.models import (
-    Album, AlbumFacet, AlbumInsight, ArtistFacet, EnrichmentStatus, FacetKind, Track,
+    Album, AlbumCredit, AlbumFacet, AlbumInsight, ArtistFacet, EnrichmentStatus, FacetKind, Track,
 )
-from library.services import album_notes, lyrics
+from library.services import album_notes, local_credits, lyrics
 from library.services.enrichment import link_facets
 from library.services.ollama import OllamaClient, OllamaError, settings
 
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"
 NOTES_SOURCE, LYRICS_SOURCE = "notes", "lyrics"
 MAX_KEYWORDS, MAX_MOODS, MAX_THEMES = 15, 8, 12
 
@@ -61,6 +61,11 @@ CAUSES = {
 }
 HIATUS_BUCKETS = [(2, "under 2 years"), (5, "2–5 years"), (10, "5–10 years"), (None, "10 years or more")]
 
+CREDIT_ROLES = {
+    "composer": FacetKind.COMPOSER, "lyricist": FacetKind.LYRICIST, "producer": FacetKind.PRODUCER,
+    "engineer": FacetKind.ENGINEER, "studio": FacetKind.STUDIO, "artwork": FacetKind.ARTWORK,
+    "label": FacetKind.LABEL,
+}
 NULLABLE_STRING = {"type": ["string", "null"]}
 NULLABLE_YEAR = {"type": ["integer", "null"]}
 STRING_LIST = {"type": "array", "items": {"type": "string"}}
@@ -88,8 +93,20 @@ NOTES_SCHEMA = {
                 "required": ["type", "who", "year", "end_year", "cause", "reason", "evidence"],
             },
         },
+        "credits": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": list(CREDIT_ROLES)},
+                    "name": {"type": "string"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["role", "name", "evidence"],
+            },
+        },
     },
-    "required": ["summary", "release_date", "keywords", "moods", "events"],
+    "required": ["summary", "release_date", "keywords", "moods", "events", "credits"],
 }
 LYRICS_SCHEMA = {
     "type": "object",
@@ -113,7 +130,12 @@ joining, leaving or dying, the band splitting up, taking a hiatus or reuniting, 
 (parenthood, drugs or alcohol, health, death, emigration, war or politics, creative differences, \
 personal conflict, money, label or legal trouble, other projects), otherwise "none_given"; \
 "reason" says it in a few words. "evidence" is a short exact quote (at most 25 words) from the text \
-that states the event. Leave the list empty when the text says nothing about the band's history."""
+that states the event. Leave the list empty when the text says nothing about the band's history.
+- credits: who made the album, only when the text names them: composer (music written by), lyricist \
+(words written by), producer, engineer (recorded, engineered, mixed or mastered by), studio (where it was \
+recorded or mixed), artwork (cover art, design, illustration, photography), label (the record label). \
+One item per person or place: "role", "name" exactly as written, and "evidence", a short exact quote \
+(at most 25 words) containing the name. Leave the list empty when the text names nobody."""
 
 LYRICS_PROMPT = f"""You read the lyrics of the songs on one music album and describe them as JSON. \
 Use only the lyrics given.
@@ -196,6 +218,24 @@ def clean_events(events, text):
     return cleaned
 
 
+def clean_credits(credits, text):
+    """Credits whose quote is in the text and contains the name; one per (role, name)."""
+    cleaned, seen = [], set()
+    for credit in credits or []:
+        if not isinstance(credit, dict) or credit.get("role") not in CREDIT_ROLES:
+            continue
+        name = re.sub(r"\s+", " ", str(credit.get("name") or "")).strip(" .,;:")[:200]
+        evidence = str(credit.get("evidence") or "").strip()
+        if len(name) < 2 or not quote_in_text(evidence, text) or _plain(name) not in _plain(evidence):
+            continue  # no proof in the text: likely invented
+        key = (credit["role"], name.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({"role": credit["role"], "name": name, "evidence": evidence[:300]})
+    return cleaned
+
+
 def hiatus_bucket(years):
     for limit, label in HIATUS_BUCKETS:
         if limit is None or years < limit:
@@ -235,7 +275,7 @@ def known_names(album):
 
 
 def extract_from_notes(client, notes_text, chunk_chars, exclude=()):
-    result = {"summary": "", "release_date": "", "keywords": [], "moods": [], "events": []}
+    result = {"summary": "", "release_date": "", "keywords": [], "moods": [], "events": [], "credits": []}
     for piece in chunks(notes_text, chunk_chars):
         answer = client.extract(NOTES_PROMPT, piece, NOTES_SCHEMA)
         if not result["summary"]:
@@ -246,7 +286,9 @@ def extract_from_notes(client, notes_text, chunk_chars, exclude=()):
         result["keywords"] += answer.get("keywords") or []
         result["moods"] += answer.get("moods") or []
         result["events"] += answer.get("events") or []
+        result["credits"] += answer.get("credits") or []
     result["events"] = clean_events(result["events"], notes_text)
+    result["credits"] = clean_credits(result["credits"], notes_text)
     exclude = set(exclude) | {(event["who"] or "").casefold() for event in result["events"]}
     result["keywords"] = [
         term for term in _clean_terms(result["keywords"], MAX_KEYWORDS * 2, text=notes_text) if term not in exclude
@@ -298,6 +340,7 @@ def lyrics_text_of(track_lyrics):
 def process_album(album, *, client=None, lyrics_client=None, refresh=False, stats=None):
     """Read the album's notes and lyrics; with ``client`` (OllamaClient) also extract facts."""
     stats = stats or InsightStats()
+    local_credits.refresh_tag_credits(album)
     tracks = list(Track.objects.filter(album=album).select_related("album__artist").order_by("track_discnumber", "track_number"))
     documents = album_notes.load_album_documents(album, [track.track_file_path for track in tracks])
     track_lyrics = []
@@ -357,6 +400,12 @@ def process_album(album, *, client=None, lyrics_client=None, refresh=False, stat
                     + [(FacetKind.MOOD, m, "", "", 0) for m in from_notes.get("moods", [])], source=NOTES_SOURCE)
         link_facets(AlbumFacet, "album", album, [(FacetKind.LYRIC_THEME, t, "", "", 0) for t in insight.lyric_themes]
                     + [(FacetKind.MOOD, m, "", "", 0) for m in from_lyrics.get("moods", [])], source=LYRICS_SOURCE)
+        AlbumCredit.objects.filter(album=album, source=AlbumCredit.SOURCE_NOTES).delete()
+        AlbumCredit.objects.bulk_create([
+            AlbumCredit(album=album, kind=CREDIT_ROLES[credit["role"]], name=credit["name"],
+                        source=AlbumCredit.SOURCE_NOTES, evidence=credit["evidence"])
+            for credit in from_notes.get("credits", [])
+        ])
         rebuild_artist_history(album.artist)
     stats.albums_extracted += 1
     return insight
@@ -369,6 +418,7 @@ def _save_empty(insight, note):
     insight.input_hash = ""
     insight.save()
     AlbumFacet.objects.filter(album=insight.album, source__in=[NOTES_SOURCE, LYRICS_SOURCE]).delete()
+    AlbumCredit.objects.filter(album=insight.album, source=AlbumCredit.SOURCE_NOTES).delete()
     rebuild_artist_history(insight.album.artist)
 
 

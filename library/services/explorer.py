@@ -51,6 +51,8 @@ GROUPS = [
     (FacetKind.ARTWORK, "Artwork", "album", False),
     (FacetKind.MUSICIAN, "Album musician", "album", False),
     (FacetKind.LABEL, "Label", "album", False),
+    (FacetKind.COMPOSER, "Composer", "album", False),
+    (FacetKind.LYRICIST, "Lyricist", "album", False),
 ]
 RATING_BANDS = [(4.5, "4.5 – 5"), (4.0, "4.0 – 4.4"), (3.5, "3.5 – 3.9"), (3.0, "3.0 – 3.4"), (0, "below 3")]
 

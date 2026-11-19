@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from .models import Album, AlbumFacet, AlbumProfile, Artist, ArtistFacet, ArtistProfile, EnrichmentStatus
+from .models import Track, Album, AlbumFacet, AlbumProfile, Artist, ArtistFacet, ArtistProfile, EnrichmentStatus
 from .services import enrichment, explorer
 from .services.importer import import_records
 
@@ -73,7 +73,11 @@ class FakeMusicBrainz:
             ],
             "label-info": [{"catalog-number": "TT 001", "label": {"id": "l1", "name": "Torrid Records"}}],
             "media": [{"tracks": [{"recording": {"relations": [
-                {"type": "recorded at", "target-type": "place", "place": {"id": "s1", "name": "Prairie Sun"}},
+                {"type": "recorded at", "target-type": "place", "place": {"id": "s1", "name": "Prairie Sun", "area": {"name": "Cotati"}}},
+                {"type": "performance", "target-type": "work", "work": {"id": "w1", "relations": [
+                    {"type": "composer", "target-type": "artist", "artist": {"id": "c1", "name": "Kirk Hammett"}},
+                    {"type": "lyricist", "target-type": "artist", "artist": {"id": "c2", "name": "Outside Writer"}},
+                ]}},
                 {"type": "producer", "target-type": "artist", "artist": {"id": "pr", "name": "Mark Whitaker"}},
                 {"type": "mix", "target-type": "artist", "artist": {"id": "pr", "name": "Mark Whitaker"}},
                 {"type": "instrument", "target-type": "artist", "attributes": ["electric guitar"],
@@ -334,7 +338,7 @@ class AlbumInheritsArtistTagsTests(TestCase):
         client = Client()
         client.login(username="u", password="p")
         page = client.get(reverse("library:album-detail", args=(album.pk,))).content.decode()
-        self.assertIn("UNITED STATES", page)
+        self.assertIn("United States", page)
         self.assertNotIn("Tom Hunting", page)
 
 
@@ -362,3 +366,141 @@ class ArtistFilterTests(TestCase):
         self.assertEqual(self.names(albums="1"), ["Exodus", "Second Band"])
         self.assertEqual(self.names(albums="7+"), [])
         self.assertEqual(self.names(voice="instrumental"), [])
+
+
+class CompletenessGroupingTests(TestCase):
+    def setUp(self):
+        import_records([
+            record(),
+            record(artist="Second Band", album="Quiet", date="2001", file_path="/music/5.mp3", genre="Ambient; Drone", title="Quiet Track"),
+        ])
+        Album.objects.filter(album_name="Quiet").update(album_publisher="Calm Records")
+        Track.objects.filter(track_title="Quiet Track").update(track_title="")
+        enrichment.enrich_library(FakeMusicBrainz())
+        get_user_model().objects.create_user("u", password="p")
+        self.web = Client()
+        self.web.login(username="u", password="p")
+
+    def groups(self, by):
+        with patch("library.views.repository.get_config", return_value={"quality_attributes": ["title", "genre"]}):
+            response = self.web.get(reverse("library:completeness-report"), {"by": by})
+        self.assertEqual(response.status_code, 200)
+        return {g["label"]: g for g in response.context["groups"]}, response
+
+    def test_every_grouping_renders_with_percentages(self):
+        for by in ("batch", "label", "country", "decade", "year", "genre", "nonsense"):
+            groups, response = self.groups(by)
+            self.assertTrue(groups, by)
+            self.assertContains(response, "% complete overall")
+
+    def test_groups_and_their_percentages(self):
+        groups, _ = self.groups("genre")
+        self.assertEqual(set(groups), {"Thrash Metal", "Ambient"})
+        self.assertEqual(groups["Thrash Metal"]["percent"], 100)
+        self.assertEqual(groups["Ambient"]["percent"], 50)  # title missing, genre present
+        self.assertEqual(groups["Ambient"]["artists"][0]["percent"], 50)
+        self.assertEqual(set(self.groups("decade")[0]), {"1980s", "2000s"})
+        self.assertIn("Calm Records", self.groups("label")[0])
+        self.assertIn("Torrid Records", self.groups("label")[0])  # label found online when the tag is empty
+
+
+class AlbumDetailsTableTests(TestCase):
+    def page(self, **overrides):
+        import_records([record(**overrides)])
+        album = Album.objects.get(album_name__startswith="Bonded")
+        get_user_model().objects.create_user("u", password="p")
+        client = Client()
+        client.login(username="u", password="p")
+        return client.get(reverse("library:album-detail", args=(album.pk,))), album
+
+    def test_details_table_replaces_the_header_tags(self):
+        response, album = self.page(genre="Thrash Metal; Speed Metal")
+        Album.objects.filter(pk=album.pk).update(album_publisher="Torrid Records")
+        page = response.content.decode()
+        self.assertIn('aria-label="Album details"', page)
+        self.assertNotIn("YEAR UNKNOWN", page)
+        self.assertNotIn("GENRE UNKNOWN", page)
+        self.assertEqual(response.context["main_genre"], "Thrash Metal")
+        self.assertEqual(response.context["other_genres"], ["Speed Metal"])
+
+    def test_missing_values_leave_the_cell_empty(self):
+        response, _ = self.page(genre="", date="")
+        page = response.content.decode()
+        self.assertEqual(response.context["main_genre"], "")
+        self.assertGreaterEqual(page.count("credit-group is-empty"), 3)  # label, country, year, genre
+
+
+class AlbumCreditsTableTests(TestCase):
+    def test_fixed_credit_cells_with_composer_and_lyricist_rules(self):
+        import_records([record()])
+        enrichment.enrich_library(FakeMusicBrainz())
+        album = Album.objects.get(album_name__startswith="Bonded")
+        get_user_model().objects.create_user("u", password="p")
+        client = Client()
+        client.login(username="u", password="p")
+        response = client.get(reverse("library:album-detail", args=(album.pk,)))
+        cells = {cell["label"]: cell["entries"] for cell in response.context["credit_cells"]}
+        self.assertEqual([e["name"] for e in cells["Main composer"]], ["Kirk Hammett"])  # a band member
+        self.assertEqual([e["name"] for e in cells["Main lyricist"]], ["Exodus"])  # not in the band: the band
+        self.assertEqual((cells["Recording studio"][0]["name"], cells["Recording studio"][0]["detail"]), ("Prairie Sun", "Cotati"))
+        self.assertEqual([e["name"] for e in cells["Producer"]], ["Mark Whitaker"])
+        self.assertEqual([e["name"] for e in cells["Sound engineer"]], ["Mark Whitaker"])
+        self.assertEqual([e["name"] for e in cells["Artwork artist"]], ["Rob Sandoval"])
+        page = response.content.decode()
+        credits = page[page.index('aria-label="Album credits"'):page.index('class="track-section"')]
+        self.assertNotIn("Torrid Records", credits)  # the label lives in Details, not in Credits
+        self.assertIn("Torrid Records", page)
+
+    def test_empty_cells_stay_visible_when_nothing_is_known(self):
+        import_records([record()])
+        album = Album.objects.get(album_name__startswith="Bonded")
+        get_user_model().objects.create_user("u", password="p")
+        client = Client()
+        client.login(username="u", password="p")
+        page = client.get(reverse("library:album-detail", args=(album.pk,))).content.decode()
+        self.assertEqual(page.count("credit-group is-empty"), 6 + 2)  # six credits plus label and country (the year is known)
+
+
+class LocalCreditSourceTests(TestCase):
+    def test_tag_credits_count_names_across_tracks(self):
+        from .models import AlbumCredit
+        from .services import local_credits
+        import_records([record(), record(title="Second", tracknumber="2", file_path="/music/2.mp3")])
+        album = Album.objects.get()
+        def tag_values(path, key):
+            if key != "composer":
+                return []
+            return ["Gary Holt", "Rob Dukes"] if path.endswith("1.mp3") else ["Gary Holt"]
+
+        with patch("library.services.local_credits.Path.exists", return_value=True), \
+                patch("library.services.local_credits._tag_values", side_effect=tag_values):
+            local_credits.refresh_tag_credits(album)
+        found = {c.name: c.count for c in AlbumCredit.objects.filter(album=album, kind="composer", source="tags")}
+        self.assertEqual(found, {"Gary Holt": 2, "Rob Dukes": 1})
+
+    def test_notes_credits_need_a_quote_that_contains_the_name(self):
+        from .services import insights
+        text = "Produced by Mark Whitaker at Prairie Sun Studios. Cover art by Rob Sandoval."
+        cleaned = insights.clean_credits([
+            {"role": "producer", "name": "Mark Whitaker", "evidence": "Produced by Mark Whitaker at Prairie Sun Studios"},
+            {"role": "artwork", "name": "Someone Else", "evidence": "Cover art by Rob Sandoval."},   # name not in quote
+            {"role": "engineer", "name": "Invented Person", "evidence": "Engineered by Invented Person at the moon"},  # not in text
+            {"role": "producer", "name": "Mark Whitaker", "evidence": "Produced by Mark Whitaker at Prairie Sun Studios"},  # duplicate
+        ], text)
+        self.assertEqual([(c["role"], c["name"]) for c in cleaned], [("producer", "Mark Whitaker")])
+
+    def test_cells_fall_through_sources_and_say_which_one_was_used(self):
+        from .views import _credit_cells
+        credits = {
+            "musicbrainz": [{"kind": "producer", "name": "MB Producer", "role": "producer", "area": "", "count": 0}],
+            "tags": [{"kind": "composer", "name": "Gary Holt", "role": "", "area": "", "count": 4, "evidence": "Composer tag on 4 tracks"}],
+            "notes": [
+                {"kind": "producer", "name": "Notes Producer", "role": "", "area": "", "count": 0},
+                {"kind": "artwork", "name": "Rob Sandoval", "role": "", "area": "", "count": 0, "evidence": "Cover art by Rob Sandoval"},
+            ],
+        }
+        cells = {c["label"]: c for c in _credit_cells(credits, "Exodus", [{"name": "Gary Holt"}])}
+        self.assertEqual((cells["Main composer"]["entries"][0]["name"], cells["Main composer"]["source"]), ("Gary Holt", "MP3 tags"))
+        self.assertEqual((cells["Producer"]["entries"][0]["name"], cells["Producer"]["source"]), ("MB Producer", "MusicBrainz"))
+        self.assertEqual((cells["Artwork artist"]["entries"][0]["name"], cells["Artwork artist"]["source"]), ("Rob Sandoval", "Liner notes"))
+        self.assertEqual((cells["Sound engineer"]["entries"], cells["Sound engineer"]["source"]), ([], ""))

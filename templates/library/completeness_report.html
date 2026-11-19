@@ -2,25 +2,26 @@
 {% block title %}Completeness{% endblock %}
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:dashboard' %}">Overview</a><span>/</span>Completeness</div>
-<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA COMPLETENESS</span><h1>Completeness</h1><p class="subheading">{{ complete_count }} complete · {{ incomplete_count }} need attention · {{ album_count }} album{{ album_count|pluralize }}</p></div></section>
+<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA COMPLETENESS</span><h1>Completeness</h1><p class="subheading">{{ overall_percent }}% complete overall · {{ complete_count }} albums complete · {{ incomplete_count }} need attention · {{ album_count }} album{{ album_count|pluralize }}</p></div></section>
+<nav class="group-tabs" aria-label="Group completeness by"><span>Group by</span>{% for key, label in groupings %}<a href="?by={{ key }}"{% if key == by %} class="is-active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
 
-<section class="completion-tree" aria-label="Completeness by batch, artist and album">
-  {% for batch in batches %}
+<section class="completion-tree" aria-label="Completeness by {{ group_label|lower }}, artist and album">
+  {% for batch in groups %}
     <details class="completion-batch">
-      <summary><strong>{% if batch.date %}Batch {{ batch.date|date:"j M Y" }}{% else %}No batch{% endif %}</strong><small class="batch-folder">{% if batch.date %}folder {{ batch.date|date:"Ymd" }}{% else %}files outside a YYYYMMDD folder{% endif %}</small><span>{{ batch.complete_count }} / {{ batch.album_count }} albums complete</span></summary>
+      <summary><strong>{{ batch.label }}</strong>{% if batch.folder %}<small class="batch-folder">{{ batch.folder }}</small>{% endif %}{% include "library/_completeness_meter.html" with percent=batch.percent %}<span>{{ batch.complete_count }} / {{ batch.album_count }} albums complete</span></summary>
       <div class="completion-batch-content">
         {% for artist in batch.artists %}
           <details class="completion-artist">
-            <summary><strong><a href="{% url 'library:artist-detail' artist.artist.pk %}">{{ artist.artist.artist_name }}</a></strong><span>{{ artist.complete_count }} / {{ artist.album_count }} albums complete</span></summary>
+            <summary><strong><a href="{% url 'library:artist-detail' artist.artist.pk %}">{{ artist.artist.artist_name }}</a></strong>{% include "library/_completeness_meter.html" with percent=artist.percent %}<span>{{ artist.complete_count }} / {{ artist.album_count }} albums complete</span></summary>
             <div class="completion-artist-content">
               {% for item in artist.albums %}
                 <details class="completion-album">
-                  <summary><strong>{{ item.album.album_name }}</strong><span class="{% if item.complete %}complete-tag{% else %}missing-tags{% endif %}">{% if item.complete %}Complete{% else %}Needs attention{% endif %}</span><small>{{ item.tracks|length }} track{{ item.tracks|length|pluralize }}</small></summary>
+                  <summary><strong>{{ item.album.album_name }}</strong>{% include "library/_completeness_meter.html" with percent=item.percent %}<span class="{% if item.complete %}complete-tag{% else %}missing-tags{% endif %}">{% if item.complete %}Complete{% else %}Needs attention{% endif %}</span><small>{{ item.tracks|length }} track{{ item.tracks|length|pluralize }}</small></summary>
                   <div class="completion-album-content">
                     <a class="quiet-link" href="{% url 'library:album-detail' item.album.pk %}">Open album ↗</a>
                     {% if item.missing_fields %}<p class="missing-tags">Missing: {{ item.missing_fields|join:", " }}</p>{% endif %}
                     {% if item.tracks %}<ul class="completion-track-list">
-                      {% for track in item.tracks %}<li><span>{{ track.name }}</span>{% if track.missing_fields %}<span class="missing-tags">Missing: {{ track.missing_fields|join:", " }}</span><a class="link-button" href="{% url 'library:edit-tags' track.id %}">Review</a>{% else %}<span class="complete-tag">Complete</span>{% endif %}</li>{% endfor %}
+                      {% for track in item.tracks %}<li><span>{{ track.name }} <small class="track-percent">{{ track.percent }}%</small></span>{% if track.missing_fields %}<span class="missing-tags">Missing: {{ track.missing_fields|join:", " }}</span><a class="link-button" href="{% url 'library:edit-tags' track.id %}">Review</a>{% else %}<span class="complete-tag">Complete</span>{% endif %}</li>{% endfor %}
                     </ul>{% else %}<p class="missing-tags">No tracks are attached to this album.</p>{% endif %}
                   </div>
                 </details>

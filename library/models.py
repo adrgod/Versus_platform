@@ -150,6 +150,8 @@ class FacetKind(models.TextChoices):
     ENGINEER = "engineer", "Sound engineer"
     ARTWORK = "artwork", "Artwork"
     LABEL = "label", "Label"
+    COMPOSER = "composer", "Composer"
+    LYRICIST = "lyricist", "Lyricist"
     MUSICIAN = "musician", "Album musician"
     # From liner notes, biographies and lyrics (see services/insights.py)
     KEYWORD = "keyword", "Album keyword"
@@ -253,3 +255,17 @@ class AlbumInsight(models.Model):
     events = models.JSONField(default=list, blank=True)
     extracted_at = models.DateTimeField(null=True, blank=True)
     llm_duration_seconds = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+
+
+class AlbumCredit(models.Model):
+    """A credit found in the user's own files (MP3 tags, liner notes), with where it came from."""
+
+    SOURCE_TAGS, SOURCE_NOTES = "tags", "notes"
+
+    album = models.ForeignKey(Album, on_delete=models.CASCADE, related_name="local_credits")
+    kind = models.CharField(max_length=20, choices=FacetKind.choices)
+    name = models.CharField(max_length=200)
+    detail = models.CharField(max_length=300, blank=True)
+    source = models.CharField(max_length=20)
+    evidence = models.CharField(max_length=300, blank=True)  # the quote or tag it was read from
+    count = models.IntegerField(default=0)

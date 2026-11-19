@@ -59,5 +59,5 @@ class MusicBrainzClient(CachedJsonClient):
     def release(self, mbid):
         return self.get(
             f"release/{mbid}",
-            inc="artist-rels+place-rels+labels+recordings+recording-level-rels+genres",
+            inc="artist-rels+place-rels+labels+recordings+recording-level-rels+work-rels+work-level-rels+genres",
         )
