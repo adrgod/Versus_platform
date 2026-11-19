@@ -69,7 +69,7 @@
   };
 
   const renderQueue = () => {
-    queueCount.textContent = `QUEUE ${queue.length}`;
+    queueCount.textContent = `Queue ${queue.length}`;
     queueList.replaceChildren();
     queue.forEach((track, index) => {
       const item = document.createElement("li");

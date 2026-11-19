@@ -21,7 +21,7 @@
   <div class="section-heading"><div><span class="eyebrow">RECENTLY INDEXED</span><h2>In the crates</h2></div><a class="quiet-link" href="{% url 'library:album-list' %}">All albums <span>↗</span></a></div>
   {% if recent_albums %}<div class="album-grid compact-grid">
     {% for album in recent_albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}">
-      <div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}<span class="cover-index">{{ forloop.counter|stringformat:"02d" }}</span></div>
+      <div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder" aria-hidden="true">{{ album.album_name|first|upper|default:"♪" }}</span>{% endif %}<span class="cover-index">{{ forloop.counter|stringformat:"02d" }}</span></div>
       <strong>{{ album.album_name }}</strong><span>{{ album.artist_name }}</span><small>{{ album.release_year|default:"YEAR UNKNOWN" }} · {{ album.track_count }} TRACKS</small>
     </a>{% endfor %}
   </div>{% else %}<div class="empty-state"><span class="empty-mark">∅</span><h3>No records indexed</h3><p>Choose a source folder and run a scan to begin.</p></div>{% endif %}

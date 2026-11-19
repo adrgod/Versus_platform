@@ -16,7 +16,7 @@
 
 <section class="genre-section"><div class="section-heading"><div><span class="eyebrow">IN THE LIBRARY</span><h2>Albums</h2></div></div>
 <div class="album-grid">
-{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.release_year|default:"Year unknown" }}</span><small>{{ album.genre|default:"GENRE UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}
+{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder" aria-hidden="true">{{ album.album_name|first|upper|default:"♪" }}</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.release_year|default:"Year unknown" }}</span><small>{{ album.genre|default:"GENRE UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}
 </div></section>
 
 {% if lineup %}<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">PERSONNEL</span><h2>Line-up</h2></div></div>
