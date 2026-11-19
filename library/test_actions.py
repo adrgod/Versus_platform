@@ -378,3 +378,47 @@ class EditTagsTests(LocalTagsTestCase):
         data = {"edit_token": response.context["edit_token"], "h-artist_formed_year": "around 2010", "h-artist_formed_year-initial": ""}
         response = self.web.post(url, data)
         self.assertContains(response, "Use a year, like 1994.", status_code=400)
+
+
+class WriteBackFoundDataTests(LocalTagsTestCase):
+    """Found data (lookups, liner notes, file names) is offered by Edit Tags and written to the files on Save."""
+
+    open_album_editor = EditTagsTests.open_album_editor
+    album_form = EditTagsTests.album_form
+
+    def setUp(self):
+        super().setUp()
+        self.web = Client()
+        self.web.force_login(get_user_model().objects.create_user("editor", password="test-password"))
+        from library.models import AlbumCredit, AlbumFacet, ArtistFacet, ArtistProfile, EnrichmentStatus, Facet
+        from library.services import resolver
+        genre = Facet.objects.create(kind="genre", name="folk metal")
+        AlbumFacet.objects.create(album=self.album, facet=genre, source="musicbrainz", weight=3)
+        ArtistProfile.objects.create(artist=self.album.artist, status=EnrichmentStatus.MATCHED,
+                                     country="Scotland", lineup=[{"name": "Andy Marshall", "instruments": []}])
+        AlbumCredit.objects.create(album=self.album, kind="composer", name="Andy Marshall", source="notes",
+                                   evidence="Music by Andy Marshall")
+        resolver.resolve_for_albums([self.album.pk])
+        self.album.refresh_from_db()
+
+    def test_found_values_are_offered_with_where_they_came_from(self):
+        header = {field["key"]: field for field in self.open_album_editor().context["header"]}
+        self.assertEqual((header["genre"]["suggested"], header["genre"]["origin"]), ("folk metal", "MusicBrainz"))
+        self.assertEqual((header["composer"]["suggested"], header["composer"]["origin"]), ("Andy Marshall", "Liner notes"))
+        self.assertEqual(header["date"]["suggested"], "")  # the year is already a tag in the files
+
+    def test_saving_the_found_values_writes_them_and_they_become_tags(self):
+        response = self.open_album_editor()
+        data = self.album_form(response, **{"h-genre": "folk metal", "h-composer": "Andy Marshall"})
+        self.web.post(reverse("library:album-edit-tags", args=[self.album.pk]), data, follow=True)
+
+        from library.services.tag_editor import read_tags
+        self.assertEqual([read_tags(path)["genre"] for path in self.files], ["folk metal"] * 2)
+        self.assertEqual([read_tags(path)["composer"] for path in self.files], ["Andy Marshall"] * 2)
+        album = Album.objects.get()
+        self.assertEqual(album.album_genre, "folk metal")
+        self.assertEqual(album.resolved_sources["genre"], "tags")
+        self.assertEqual(album.resolved_credits["composer"]["source"], "tags")
+        # Nothing left to offer for what is now in the files.
+        header = {field["key"]: field for field in self.open_album_editor().context["header"]}
+        self.assertEqual((header["genre"]["suggested"], header["composer"]["suggested"]), ("", ""))

@@ -74,6 +74,10 @@ def import_and_carry_over(records, *, on_skip=None, touched=None):
     if replaced:
         prune_empty()
 
+    # The enrichment now sits on the new rows: rebuild what the pages show from tags + enrichment.
+    from library.services import resolver
+    resolver.resolve_for_tracks(touched)
+
     summary.tracks_replaced = len(replaced)
     summary.albums = len({new for _, new in album_pairs})
     summary.artists = len({new for _, new in artist_pairs})

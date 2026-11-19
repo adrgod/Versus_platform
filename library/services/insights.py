@@ -25,7 +25,7 @@ from django.utils import timezone
 from library.models import (
     Album, AlbumCredit, AlbumFacet, AlbumInsight, ArtistFacet, EnrichmentStatus, FacetKind, Track,
 )
-from library.services import album_notes, local_credits, lyrics
+from library.services import album_notes, local_credits, lyrics, resolver
 from library.services.enrichment import link_facets
 from library.services.ollama import OllamaClient, OllamaError, settings
 
@@ -497,6 +497,7 @@ def run(*, refresh=False, album_ids=None, artist_ids=None, extract=True, online_
             message = str(error) if isinstance(error, (OllamaError, lyrics.LyricsError)) else f"{type(error).__name__}: {error}"
             stats.errors.append(f"{stats.current}: {message}")
             AlbumInsight.objects.filter(album=album).update(status=EnrichmentStatus.ERROR, note=message[:300])
+        resolver.resolve_for_albums([album.pk])
         stats.albums_done += 1
     stats.current = ""
     if progress:

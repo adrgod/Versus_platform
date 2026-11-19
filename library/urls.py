@@ -35,6 +35,7 @@ urlpatterns = [
     path("batches/<str:day>/status/", views.batch_status, name="batch-status"),
     path("quality/", views.quality_report, name="quality-report"),
     path("quality/completeness/", views.completeness_report, name="completeness-report"),
+    path("quality/completeness/fill/", views.fill_missing_start, name="fill-missing"),
     path("tracks/<int:track_id>/edit/", views.edit_track_tags, name="edit-tags"),
     path("albums/<int:album_id>/edit/", views.album_edit_tags, name="album-edit-tags"),
     path("artists/<int:artist_id>/edit/", views.artist_edit_tags, name="artist-edit-tags"),

@@ -8,6 +8,11 @@ class Artist(models.Model):
     artist_country = models.CharField(max_length=30, blank=True)
     artist_formed_year = models.IntegerField(null=True, blank=True)
     artist_photo = models.BinaryField(editable=True, null=True, blank=True)
+    # The value every page shows: the file tag, else what lookups found. Rebuilt by
+    # services/resolver.py; ``resolved_sources`` says where each value came from.
+    resolved_country = models.CharField(max_length=100, blank=True)
+    resolved_formed_year = models.IntegerField(null=True, blank=True)
+    resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 
@@ -29,6 +34,13 @@ class Album(models.Model):
     album_publisher = models.CharField(max_length=100, blank=True)
     album_batch_date = models.DateField(null=True, blank=True)
     album_length_class = models.CharField(max_length=10, blank=True)
+    # What every page shows (see Artist.resolved_*): the file tag, else what lookups found.
+    resolved_year = models.IntegerField(null=True, blank=True)
+    resolved_genre = models.CharField(max_length=200, blank=True)
+    resolved_label = models.CharField(max_length=100, blank=True)
+    resolved_country = models.CharField(max_length=100, blank=True)
+    resolved_credits = models.JSONField(default=dict, blank=True)
+    resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 
@@ -48,6 +60,8 @@ class Track(models.Model):
     track_duration = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
     track_dq_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     track_file_path = models.CharField(max_length=500, blank=False)
+    resolved_number = models.IntegerField(null=True, blank=True)  # tag, else the file name
+    resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 

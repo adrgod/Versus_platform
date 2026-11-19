@@ -4,10 +4,7 @@ from django.db import migrations, models
 
 
 def backfill(apps, schema_editor):
-    from library.models import Album
-    from library.services.enrichment import inherit_artist_tags
-    for album in Album.objects.select_related("artist"):
-        inherit_artist_tags(album)
+    """Superseded: 0011 rebuilds every album's values with the resolver (and a fresh database has no rows here)."""
 
 
 class Migration(migrations.Migration):

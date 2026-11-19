@@ -23,6 +23,7 @@ from library.models import (
     Album, AlbumFacet, AlbumProfile, Artist, ArtistFacet, ArtistProfile,
     EnrichmentStatus, Facet, FacetKind,
 )
+from library.services import resolver
 from library.services.musicbrainz import MusicBrainzClient, MusicBrainzError
 
 SOURCE = "musicbrainz"
@@ -210,6 +211,14 @@ def _artist_tags_missing(profile, artist):
 
 
 def enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=None):
+    """Look an artist and its albums up, then rebuild the values the pages show."""
+    try:
+        return _enrich_artist(client, artist, stats=stats, refresh=refresh, only_album_ids=only_album_ids)
+    finally:
+        resolver.resolve_for_artist(artist)
+
+
+def _enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=None):
     """Look an artist up, then its albums.
 
     For an album-only run the artist's stored tags come first: when it is already matched and
@@ -531,37 +540,22 @@ INHERITED = "from artist"
 
 
 def inherit_artist_tags(album):
-    """Copy the tags an album shares with its artist (genres, country) onto the album itself.
+    """Give an album the artist's genres as its own genre links (so the genre pages list it).
 
-    No network: it reads what the artist already has. An album's own genres are never
-    replaced; genres copied earlier are refreshed when the artist's change.
+    No network. An album's own genres are never replaced; genres copied earlier are
+    refreshed when the artist's change. The *tag* columns are never touched: what the
+    pages show is rebuilt from tags + enrichment by services/resolver.py.
     """
-    artist = album.artist
-    artist_profile = ArtistProfile.objects.filter(artist=artist, status=EnrichmentStatus.MATCHED).first()
-    country = (artist_profile.country if artist_profile else "") or artist.artist_country
     genres = list(
-        ArtistFacet.objects.filter(artist=artist, source=SOURCE, facet__kind=FacetKind.GENRE)
+        ArtistFacet.objects.filter(artist=album.artist, source=SOURCE, facet__kind=FacetKind.GENRE)
         .select_related("facet").order_by("-weight", "facet__name")
     )
-    profile, _ = AlbumProfile.objects.get_or_create(album=album)
-    if profile.country != (country or ""):
-        profile.country = country or ""
-        profile.save(update_fields=["country"])
-
     own = AlbumFacet.objects.filter(album=album, facet__kind=FacetKind.GENRE).exclude(detail=INHERITED)
     if not own.exists():
         AlbumFacet.objects.filter(album=album, facet__kind=FacetKind.GENRE, detail=INHERITED).delete()
         link_facets(AlbumFacet, "album", album, [
             (FacetKind.GENRE, link.facet.name, "", INHERITED, link.weight) for link in genres
         ])
-        if genres and not album.album_genre:
-            names = []
-            for link in genres:
-                if len(", ".join(names + [link.facet.name])) > 50:
-                    break
-                names.append(link.facet.name)
-            if names:
-                Album.objects.filter(pk=album.pk).update(album_genre=", ".join(names))
 
 
 def _richest_release(client, release_group_id, tries=3):

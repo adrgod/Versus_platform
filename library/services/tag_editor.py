@@ -28,6 +28,8 @@ ALBUM_FIELDS = [
     ("originaldate", "Original date"),
     ("genre", "Genre"),
     ("publisher", "Label"),
+    ("composer", "Composer"),
+    ("lyricist", "Lyricist"),
 ]
 TRACK_FIELDS = [
     ("discnumber", "Disc"),
@@ -134,6 +136,7 @@ def _save(edits, reimport_paths):
             if stats["skipped"]:
                 raise TagEditError("Artist, album and title cannot be empty.")
         result.albums_carried, result.artists_carried = carried.albums, carried.artists
+        _refresh_after_save(result.track_ids)
         return result
     except Exception as error:
         for snapshot in reversed(snapshots):
@@ -141,6 +144,17 @@ def _save(edits, reimport_paths):
         if isinstance(error, TagEditError):
             raise
         raise TagEditError(f"Nothing was saved; every file was put back. ({error})") from error
+
+
+def _refresh_after_save(track_ids):
+    """Composer / lyricist tags just written count as "MP3 tags" credits: read them, then re-resolve."""
+    from library.models import Album, Track
+    from library.services import local_credits, resolver
+
+    album_ids = set(Track.objects.filter(pk__in=track_ids).values_list("album_id", flat=True))
+    for album in Album.objects.filter(pk__in=album_ids):
+        local_credits.refresh_tag_credits(album)
+    resolver.resolve_for_albums(album_ids)
 
 
 def _write(path, changes):

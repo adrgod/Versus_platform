@@ -34,8 +34,8 @@ from .services.files_scanner import (
 	read_file_metadata,
 )
 from .services import enrichment as enrichment_api
-from .services import explorer
-from .services import local_credits as local_credits_api
+from .services import explorer, fill_missing
+from .services import resolver as resolver_api
 from .services import insights as insights_api
 from .services.ollama import OllamaClient
 from .services import tag_editor
@@ -53,9 +53,11 @@ def _with_covers(albums):
 @login_required
 def dashboard(request):
 	recent_albums = queries.albums().order_by("-when_loaded", Lower("album_name"))[:6]
+	stats = queries.dashboard_stats()
+	stats["completeness"] = _overall_completeness()
 	return render(request, "library/dashboard.html", {
 		"state": LibraryState.load(),
-		"stats": queries.dashboard_stats(),
+		"stats": stats,
 		"recent_albums": _with_covers(recent_albums),
 	})
 
@@ -163,7 +165,7 @@ def browse(request):
 def genre_index(request):
 	search = request.GET.get("q", "").strip()
 	rows = queries.albums().order_by(
-		Lower("album_genre"), Lower("artist__artist_name"), Lower("album_name")
+		Lower("resolved_genre"), Lower("artist__artist_name"), Lower("album_name")
 	)
 	genres_by_key = {}
 	for row in rows:
@@ -309,23 +311,19 @@ def artist_list(request):
 
 	# Per-artist facts the filters work on.
 	batches, years = {}, {}
-	for artist_id, batch, year in Album.objects.filter(artist_id__in=ids).values_list("artist_id", "album_batch_date", "album_release_year"):
+	for artist_id, batch, year in Album.objects.filter(artist_id__in=ids).values_list("artist_id", "album_batch_date", "resolved_year"):
 		if batch:
 			batches.setdefault(artist_id, set()).add(batch.isoformat())
 		if year:
 			years.setdefault(artist_id, set()).add(str(year))
-	countries = {
-		artist_id: country
-		for artist_id, country in ArtistProfile.objects.filter(artist_id__in=ids, status=EnrichmentStatus.MATCHED)
-		.exclude(country="").values_list("artist_id", "country")
-	}
+	countries = dict(Artist.objects.filter(pk__in=ids).exclude(resolved_country="").values_list("pk", "resolved_country"))
 	main_genre = {}
 	for artist_id, name in (
 		ArtistFacet.objects.filter(artist_id__in=ids, facet__kind=FacetKind.GENRE)
 		.order_by("-weight", "facet__name").values_list("artist_id", "facet__name")
 	):
 		main_genre.setdefault(artist_id, name)
-	for artist_id, tag in Album.objects.filter(artist_id__in=ids).exclude(album_genre="").order_by("album_release_year").values_list("artist_id", "album_genre"):
+	for artist_id, tag in Album.objects.filter(artist_id__in=ids).exclude(resolved_genre="").order_by("resolved_year").values_list("artist_id", "resolved_genre"):
 		if artist_id not in main_genre and explorer.split_genres(tag):
 			main_genre[artist_id] = explorer.split_genres(tag)[0]
 	voice = {}
@@ -341,7 +339,7 @@ def artist_list(request):
 	for artist in artists:
 		artist.batches = batches.get(artist.pk, set())
 		artist.release_years = years.get(artist.pk, set())
-		artist.country = countries.get(artist.pk) or artist.artist_country
+		artist.country = countries.get(artist.pk, "")
 		artist.main_genre = main_genre.get(artist.pk, "")
 		artist.voice = voice.get(artist.pk, "")
 
@@ -407,7 +405,7 @@ def artist_detail(request, artist_id):
 	albums = (
 		queries.albums()
 		.filter(artist_id=artist_id)
-		.order_by("album_release_year", Lower("album_name"))
+		.order_by("resolved_year", Lower("album_name"))
 	)
 	profile = ArtistProfile.objects.filter(artist=artist).first()
 	links = artist.facet_links.select_related("facet").order_by("-weight", "facet__name")
@@ -423,7 +421,7 @@ def artist_detail(request, artist_id):
 				],
 			})
 	matched = profile is not None and profile.status == EnrichmentStatus.MATCHED
-	country = (profile.country if matched else "") or artist.artist_country
+	country = artist.resolved_country
 	job = enrichment_service.running_job()
 	return render(request, "library/artist_detail.html", {
 		"artist": artist,
@@ -435,7 +433,7 @@ def artist_detail(request, artist_id):
 		"discography": profile.discography if matched else [],
 		"country": country,
 		"country_url": facet_url("country", country) if country else None,
-		"formed": (profile.begin_year if matched else None) or artist.artist_formed_year,
+		"formed": artist.resolved_formed_year,
 		"job": job,
 		"job_here": _job_is_about(job, artist_id=artist.pk),
 		"importing": is_importing(),
@@ -457,61 +455,24 @@ def album_list(request):
 	return render(request, "library/album_list.html", {"albums": _with_covers(rows), "search": search})
 
 
-CREDIT_SOURCE_ORDER = ("musicbrainz", "tags", "notes")
+CREDIT_CELL_LABELS = [
+	("composer", "Main composer", FacetKind.COMPOSER),
+	("lyricist", "Main lyricist", FacetKind.LYRICIST),
+	("studio", "Recording studio", FacetKind.STUDIO),
+	("producer", "Producer", FacetKind.PRODUCER),
+	("engineer", "Sound engineer", FacetKind.ENGINEER),
+	("artwork", "Artwork artist", FacetKind.ARTWORK),
+]
 
 
-def _credit_cells(credits_by_source, artist_name, lineup):
-	"""The fixed Credits cells of an album page; a cell without data stays empty.
-
-	``credits_by_source`` maps "musicbrainz" / "tags" / "notes" to credit dicts. Each cell is
-	filled from the first source that has something for it, and says which source that was.
-	"""
-	members = [member["name"] for member in lineup]
-	source_label = local_credits_api.SOURCE_LABELS
-
-	def first_source(kind):
-		for source in CREDIT_SOURCE_ORDER:
-			found = [c for c in credits_by_source.get(source, []) if c["kind"] == kind]
-			if found:
-				return source, found
-		return "", []
-
-	def main_writer(kind):
-		source, writers = first_source(kind)
-		if not writers:
-			return "", []
-		top = sorted(writers, key=lambda c: (-c.get("count", 0), c["name"].casefold()))[0]
-		is_member = any(enrichment_api.similarity(top["name"], member) >= enrichment_api.NAME_THRESHOLD for member in members)
-		# A writer who is not in the band is shown as the band: the album is credited to it.
-		shown = top["name"] if is_member else artist_name
-		return source, [{"name": shown, "url": facet_url(kind, shown), "detail": "", "evidence": top.get("evidence", "")}]
-
-	def entries(kind, *, detail="role"):
-		source, found = first_source(kind)
-		return source, [
-			{"name": c["name"], "url": facet_url(kind, c["name"]), "detail": c.get(detail, ""), "evidence": c.get("evidence", "")}
-			for c in found
-		]
-
-	def studio():
-		source, found = entries(FacetKind.STUDIO, detail="area")
-		raw = credits_by_source.get(source, [])
-		recorded = {c["name"] for c in raw if c["kind"] == FacetKind.STUDIO and "recorded" in c.get("role", "")}
-		found = [entry for entry in found if entry["name"] in recorded] or found
-		return source, found[:1]
-
-	cells = [
-		("Main composer", main_writer(FacetKind.COMPOSER)),
-		("Main lyricist", main_writer(FacetKind.LYRICIST)),
-		("Recording studio", studio()),
-		("Producer", entries(FacetKind.PRODUCER)),
-		("Sound engineer", entries(FacetKind.ENGINEER)),
-		("Artwork artist", entries(FacetKind.ARTWORK)),
-	]
-	return [
-		{"label": label, "entries": found, "source": source_label.get(source, "") if found else ""}
-		for label, (source, found) in cells
-	]
+def _credit_cells(resolved_credits):
+	"""The fixed Credits cells of an album page, from the credits stored on the album."""
+	cells = []
+	for key, label, kind in CREDIT_CELL_LABELS:
+		cell = resolved_credits.get(key) or {"source": "", "entries": []}
+		entries = [{**entry, "url": facet_url(kind, entry["name"])} for entry in cell["entries"]]
+		cells.append({"label": label, "entries": entries, "source": resolver_api.source_label(cell["source"]) if entries else ""})
+	return cells
 
 
 @login_required
@@ -519,7 +480,7 @@ def album_detail(request, album_id):
 	album = get_object_or_404(queries.albums(), pk=album_id)
 	album.cover_uri = repository.album_cover_data_uri(album.album_cover)
 	tracks = list(
-		queries.tracks().filter(album_id=album_id).order_by("track_discnumber", "track_number", Lower("track_title"))
+		queries.tracks().filter(album_id=album_id).order_by("track_discnumber", "resolved_number", Lower("track_title"))
 	)
 	multi_disc = len({track.track_discnumber for track in tracks}) > 1
 	playable_tracks = [
@@ -534,35 +495,12 @@ def album_detail(request, album_id):
 	profile = AlbumProfile.objects.filter(album_id=album_id).first()
 	matched = profile is not None and profile.status == EnrichmentStatus.MATCHED
 	chips = _facet_chips(AlbumFacet.objects.filter(album_id=album_id).select_related("facet").order_by("-weight", "facet__name"))
-	artist_profile = ArtistProfile.objects.filter(artist_id=album.artist_id, status=EnrichmentStatus.MATCHED).first()
-	credits_by_source = {"musicbrainz": profile.credits if matched else []}
-	for item in AlbumCredit.objects.filter(album_id=album_id):
-		credits_by_source.setdefault(item.source, []).append(
-			{"kind": item.kind, "name": item.name, "role": item.detail, "area": "", "count": item.count, "evidence": item.evidence}
-		)
-	credit_cells = _credit_cells(credits_by_source, album.artist_name, artist_profile.lineup if artist_profile else [])
+	# Everything in Details and Credits is stored on the album (services/resolver.py); nothing is worked out here.
+	sources = {key: resolver_api.source_label(value) for key, value in album.resolved_sources.items()}
 	genres = chips.get(FacetKind.GENRE, [])
-	country = profile.country if profile else ""
-	genre_names = explorer.split_genres(album.genre)
-	genre_names += [chip["name"] for chip in genres if chip["name"].casefold() not in {n.casefold() for n in genre_names}]
-	label = album.album_publisher or next((chip["name"] for chip in chips.get(FacetKind.LABEL, [])), "")
-	notes_label = "" if label else next(iter(AlbumCredit.objects.filter(album_id=album_id, kind=FacetKind.LABEL, source="notes").values_list("name", flat=True)), "")
-	label = label or notes_label
-	label_source = "MP3 tags" if album.album_publisher else "MusicBrainz" if label and not notes_label else "Liner notes" if label else ""
-	if explorer.split_genres(album.genre):
-		genre_source = "MP3 tags"
-	elif genres:
-		genre_source = "MusicBrainz, from the artist" if genres[0].get("detail") == enrichment_api.INHERITED else "MusicBrainz"
-	else:
-		genre_source = ""
-	if country and artist_profile and artist_profile.country:
-		country_source = "MusicBrainz, from the artist"
-	else:
-		country_source = "MP3 tags, from the artist" if country else ""
+	genre_names = explorer.split_genres(album.resolved_genre)
+	country, label, year = album.resolved_country, album.resolved_label, album.resolved_year
 	insight = AlbumInsight.objects.filter(album_id=album_id).first()
-	insight_year = int(insight.release_date[:4]) if insight and insight.release_date[:4].isdigit() else None
-	year = album.album_release_year or (profile.release_year if matched else None) or insight_year
-	year_source = "MP3 tags" if album.album_release_year else "MusicBrainz" if year and matched and profile.release_year else "Liner notes" if year else ""
 	decade = explorer.decade_label(year)
 	lyrics_by_track = {item.track_id: item for item in TrackLyrics.objects.filter(track__album_id=album_id)}
 	job = enrichment_service.running_job()
@@ -579,17 +517,17 @@ def album_detail(request, album_id):
 		"profile": profile,
 		"matched": matched,
 		"genres": genres,
-		"credit_cells": credit_cells,
+		"credit_cells": _credit_cells(album.resolved_credits),
 		"country": country,
 		"country_url": facet_url("country", country) if country else None,
 		"main_genre": genre_names[0] if genre_names else "",
 		"main_genre_url": facet_url(FacetKind.GENRE, genre_names[0]) if genre_names else None,
 		"other_genres": genre_names[1:],
 		"label": label,
-		"label_source": label_source,
-		"genre_source": genre_source,
-		"country_source": country_source,
-		"year_source": year_source,
+		"label_source": sources.get("label", ""),
+		"genre_source": sources.get("genre", ""),
+		"country_source": sources.get("country", ""),
+		"year_source": sources.get("year", ""),
 		"label_url": facet_url(FacetKind.LABEL, label) if label else None,
 		"year": year,
 		"decade": decade,
@@ -666,7 +604,7 @@ def stream_track(request, track_id):
 def _quality_rows(search=""):
 	rows = (
 		queries.tracks()
-		.annotate(release_year=F("album__album_release_year"), genre=F("album__album_genre"))
+		.annotate(release_year=F("album__resolved_year"), genre=F("album__resolved_genre"))
 		.filter(
 			Q(track_title__icontains=search)
 			| Q(album__album_name__icontains=search)
@@ -685,12 +623,23 @@ def _quality_rows(search=""):
 	return result
 
 
+def _overall_completeness():
+	"""Average completeness of all tracks in percent (what the Completeness page shows), or None."""
+	fields = repository.get_config()["quality_attributes"]
+	tracks = queries.tracks().annotate(release_year=F("album__resolved_year"), genre=F("album__resolved_genre"))
+	total = count = 0
+	for track in tracks:
+		total += _track_percent(_missing_quality_fields(track, fields), fields)
+		count += 1
+	return _percent(total, count) if count else None
+
+
 def _missing_quality_fields(row, fields):
 	row_attributes = {
 		"artist": "artist_name",
 		"album": "album_name",
 		"title": "track_name",
-		"tracknumber": "track_number",
+		"tracknumber": "number",
 		"date": "release_year",
 		"genre": "genre",
 	}
@@ -727,24 +676,23 @@ def _track_percent(missing, fields):
 	return round(100 * (len(fields) - len(missing)) / len(fields)) if fields else 100
 
 
-def _completeness_group_key(by, album, artist_country_by_id, facet_genre, facet_label):
+def _completeness_group_key(by, album):
 	"""(sort key, label, date) of the group an album belongs to for the chosen grouping."""
-	profile = getattr(album, "profile", None)
 	if by == "batch":
 		day = album.album_batch_date
 		return (day is None, -(day.toordinal()) if day else 0), (f"Batch {day:%-d %b %Y}" if day else "No batch"), day
+	year = album.resolved_year
+	if by in ("decade", "year") and year:
+		value = explorer.decade_label(year) if by == "decade" else str(year)
+		return (False, -(year // 10 * 10 if by == "decade" else year)), value, None
 	if by == "label":
-		value = album.album_publisher or facet_label.get(album.pk, "")
+		value = album.resolved_label
 	elif by == "country":
-		value = (profile.country if profile else "") or artist_country_by_id.get(album.artist_id, "")
-	elif by in ("decade", "year"):
-		year = album.album_release_year or (profile.release_year if profile else None)
-		value = (explorer.decade_label(year) if by == "decade" else str(year or "")) if year else ""
-		if value:
-			return (False, -(year // 10 * 10 if by == "decade" else year)), value, None
+		value = album.resolved_country
+	elif by == "genre":
+		value = (explorer.split_genres(album.resolved_genre) or [""])[0]
 	else:
-		tags = explorer.split_genres(album.album_genre)
-		value = tags[0] if tags else facet_genre.get(album.pk, "")
+		value = ""
 	if not value:
 		return (True, ""), "Unknown", None
 	return (False, value.casefold()), value, None
@@ -760,19 +708,11 @@ def completeness_report(request):
 	tracks = (
 		queries.tracks()
 		.select_related("album", "album__artist")
-		.annotate(release_year=F("album__album_release_year"), genre=F("album__album_genre"))
+		.annotate(release_year=F("album__resolved_year"), genre=F("album__resolved_genre"))
 		.order_by(*queries.track_order())
 	)
 	for track in tracks:
 		tracks_by_album.setdefault(track.album_id, []).append(track)
-
-	artist_country_by_id = {
-		artist.pk: (getattr(artist, "profile", None).country if getattr(artist, "profile", None) and artist.profile.status == EnrichmentStatus.MATCHED else "") or artist.artist_country
-		for artist in Artist.objects.select_related("profile")
-	}
-	facet_genre, facet_label = {}, {}
-	for album_id, kind, name in AlbumFacet.objects.filter(facet__kind__in=[FacetKind.GENRE, FacetKind.LABEL]).order_by("-weight", "facet__name").values_list("album_id", "facet__kind", "facet__name"):
-		(facet_genre if kind == FacetKind.GENRE else facet_label).setdefault(album_id, name)
 
 	def new_node(**extra):
 		return {"album_count": 0, "complete_count": 0, "incomplete_count": 0, "percent_sum": 0, "track_count": 0, **extra}
@@ -784,7 +724,7 @@ def completeness_report(request):
 		Lower("artist__artist_name"), Lower("album_name")
 	)
 	for album in albums:
-		sort_key, label, day = _completeness_group_key(by, album, artist_country_by_id, facet_genre, facet_label)
+		sort_key, label, day = _completeness_group_key(by, album)
 		group = groups.setdefault(label, new_node(
 			sort_key=sort_key, label=label, date=day, artists={},
 			folder=(f"folder {day:%Y%m%d}" if day else "files outside a YYYYMMDD folder") if by == "batch" else "",
@@ -841,7 +781,21 @@ def completeness_report(request):
 		"complete_count": complete_count,
 		"incomplete_count": incomplete_count,
 		"overall_percent": _percent(overall["percent_sum"], overall["track_count"]),
+		"fill_job": enrichment_service.get_job("fill"),
+		"running": enrichment_service.running_job(),
+		"fillable_count": len(fill_missing.fillable_album_ids()),
 	})
+
+
+@login_required
+@require_POST
+def fill_missing_start(request):
+	"""Fill in Missing Data: local sources first, then an online lookup, for albums missing a year or genre."""
+	if enrichment_service.start_job("fill"):
+		messages.success(request, "Fill in Missing Data started.")
+	else:
+		_job_busy(request)
+	return redirect("library:completeness-report")
 
 
 def _tag_fields():
@@ -1087,11 +1041,7 @@ def _enriched_albums(queryset):
 	return queryset.annotate(
 		rating=F("profile__rating"),
 		rating_votes=F("profile__rating_votes"),
-		sort_year=Coalesce(
-			"album_release_year",
-			"profile__release_year",
-			Cast(NullIf(Substr("insight__release_date", 1, 4), Value("")), IntegerField()),
-		),
+		sort_year=F("resolved_year"),
 	)
 
 
@@ -1129,8 +1079,8 @@ def explore(request):
 		artists.append({
 			"id": artist.pk,
 			"name": artist.artist_name,
-			"country": (profile.country if matched else "") or artist.artist_country,
-			"formed": (profile.begin_year if matched else None) or artist.artist_formed_year,
+			"country": artist.resolved_country,
+			"formed": artist.resolved_formed_year,
 			"album_count": artist_rows[artist.pk],
 		})
 
@@ -1446,6 +1396,25 @@ def _readable_tracks(queryset):
 	return tracks
 
 
+def _found_album_values(album):
+	"""{tag key: (value, origin)} for values lookups or notes found that the files do not carry."""
+	sources = album.resolved_sources
+	found = {}
+
+	def add(key, value, source):
+		if value and source and source != "tags":
+			found[key] = (str(value), resolver_api.source_label(source))
+
+	add("date", album.resolved_year, sources.get("year"))
+	add("genre", album.resolved_genre, sources.get("genre"))
+	add("publisher", album.resolved_label, sources.get("label"))
+	for key, cell in (("composer", "composer"), ("lyricist", "lyricist")):
+		credit = album.resolved_credits.get(cell) or {}
+		if credit.get("entries"):
+			add(key, credit["entries"][0]["name"], credit.get("source"))
+	return found
+
+
 @login_required
 def album_edit_tags(request, album_id):
 	"""Edit Tags for one album: album tags in a header, every track's tags in a table below."""
@@ -1496,15 +1465,21 @@ def album_edit_tags(request, album_id):
 		else:
 			messages.error(request, f"{len(errors)} value{pluralize(len(errors))} need{'' if len(errors) != 1 else 's'} fixing before saving.")
 
-	# What the folder layout says (ARTIST - ALBUM, LABEL), offered when a tag is empty.
+	# Offered when a tag is empty: what the folder layout says, else what was found since (resolver).
 	from_folder = derived_tags(readable[0].track_file_path) if readable else {}
 	from_folder["albumartist"] = from_folder.get("artist", "")
+	found = _found_album_values(album)
 	header = []
 	for key, label in tag_editor.ALBUM_FIELDS:
 		value, mixed = _shared_value(track.tags.get(key, "") for track in readable)
-		suggested = from_folder.get(key, "") if not value and not mixed else ""
+		suggested, origin = "", ""
+		if not value and not mixed:
+			if from_folder.get(key):
+				suggested, origin = from_folder[key], "Folder"
+			elif found.get(key):
+				suggested, origin = found[key]
 		header.append({
-			"key": key, "label": label, "initial": value, "mixed": mixed, "suggested": suggested,
+			"key": key, "label": label, "initial": value, "mixed": mixed, "suggested": suggested, "origin": origin,
 			"value": posted.get(f"h-{key}", value) if posted else value,
 			"in_table": key not in tag_editor.ALBUM_ONLY,
 		})
@@ -1517,6 +1492,9 @@ def album_edit_tags(request, album_id):
 			cells.append({
 				"key": key, "label": label, "name": name, "initial": initial,
 				"value": posted.get(name, initial) if posted else initial, "error": errors.get(name),
+				# a track number the file name carries, offered while the tag is empty
+				"suggested": str(track.resolved_number) if key == "tracknumber" and not initial and track.resolved_number
+				and track.resolved_sources.get("number") == "filename" else "",
 			})
 		rows.append({"track": track, "cells": cells, "file_name": Path(track.track_file_path).name if track.track_file_path else ""})
 
@@ -1528,6 +1506,7 @@ def album_edit_tags(request, album_id):
 		"readable_count": len(readable),
 		"missing_count": len(tracks) - len(readable),
 		"edit_token": _edit_token("album", album.pk, readable),
+		"has_suggestions": any(field["suggested"] for field in header) or any(cell["suggested"] for row in rows for cell in row["cells"]),
 		"importing": is_importing(),
 	}, status=400 if errors else 200)
 
@@ -1578,13 +1557,21 @@ def artist_edit_tags(request, artist_id):
 			messages.error(request, f"{len(errors)} value{pluralize(len(errors))} need{'' if len(errors) != 1 else 's'} fixing before saving.")
 
 	fields = []
+	found_artist = {}
+	for key, found_value, source in (
+		("artist_country", artist.resolved_country, artist.resolved_sources.get("country")),
+		("artist_formed_year", artist.resolved_formed_year, artist.resolved_sources.get("formed_year")),
+	):
+		if found_value and source and source != "tags":
+			found_artist[key] = (str(found_value), resolver_api.source_label(source))
 	for key, label in tag_editor.ARTIST_FIELDS:
 		value, mixed = _shared_value(track.tags.get(key, "") for track in readable)
+		suggested, origin = found_artist.get(key, ("", "")) if not value and not mixed else ("", "")
 		fields.append({
-			"key": key, "label": label, "initial": value, "mixed": mixed,
+			"key": key, "label": label, "initial": value, "mixed": mixed, "suggested": suggested, "origin": origin,
 			"value": posted.get(f"h-{key}", value) if posted else value, "error": errors.get(f"h-{key}"),
 		})
-	albums = queries.albums().filter(artist_id=artist.pk).order_by("album_release_year", Lower("album_name"))
+	albums = queries.albums(tag_year_only=True).filter(artist_id=artist.pk).order_by("album_release_year", Lower("album_name"))
 	return render(request, "library/artist_edit_tags.html", {
 		"artist": artist,
 		"fields": fields,

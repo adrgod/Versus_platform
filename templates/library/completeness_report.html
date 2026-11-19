@@ -2,7 +2,15 @@
 {% block title %}Completeness{% endblock %}
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:dashboard' %}">Overview</a><span>/</span>Completeness</div>
-<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA COMPLETENESS</span><h1>Completeness</h1><p class="subheading">{{ overall_percent }}% complete overall · {{ complete_count }} albums complete · {{ incomplete_count }} need attention · {{ album_count }} album{{ album_count|pluralize }}</p></div></section>
+<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA COMPLETENESS</span><h1>Completeness</h1><p class="subheading">{{ overall_percent }}% complete overall · {{ complete_count }} albums complete · {{ incomplete_count }} need attention · {{ album_count }} album{{ album_count|pluralize }}</p></div>
+  <form class="fill-form" method="post" action="{% url 'library:fill-missing' %}">{% csrf_token %}<button class="button button-primary" type="submit" {% if running %}disabled title="{{ running.label }} is running"{% elif not fillable_count %}disabled title="No album is missing a value that can be looked up"{% else %}title="Look up the release year and genre of {{ fillable_count }} album{{ fillable_count|pluralize }}: local files first, then MusicBrainz"{% endif %}>{% include "library/_icon.html" with name="sparkles" %}Fill in Missing Data</button>{% if fillable_count %}<small>{{ fillable_count }} album{{ fillable_count|pluralize }} can be filled</small>{% endif %}</form>
+</section>
+{% if fill_job %}<div class="job-strip"{% if fill_job.running %} data-poll="3000"{% endif %} role="status">
+  <span class="status-dot {% if fill_job.running %}status-scanning{% elif fill_job.error %}status-failed{% endif %}"></span>
+  {% if fill_job.running %}<span><strong>Fill in Missing Data</strong> · {{ fill_job.stats.stage|default:"Starting…" }}{% if fill_job.stats.current %} · {{ fill_job.stats.current }}{% endif %}</span>
+  {% elif fill_job.error %}<span><strong>Fill in Missing Data stopped:</strong> {{ fill_job.error }}</span>
+  {% else %}<span><strong>Fill in Missing Data finished</strong> · {{ fill_job.stats.albums_filled }} of {{ fill_job.stats.albums_before }} album{{ fill_job.stats.albums_before|pluralize }} filled{% if fill_job.stats.albums_after %}, {{ fill_job.stats.albums_after }} still missing a year or genre{% endif %}{% if fill_job.stats.extraction_skipped %} · AI skipped: {{ fill_job.stats.extraction_skipped }}{% endif %}</span>{% endif %}
+</div>{% endif %}
 <nav class="group-tabs" aria-label="Group completeness by"><span>Group by</span>{% for key, label in groupings %}<a href="?by={{ key }}"{% if key == by %} class="is-active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
 
 <section class="completion-tree" aria-label="Completeness by {{ group_label|lower }}, artist and album">

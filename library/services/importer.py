@@ -73,10 +73,16 @@ def import_records(records, model_name="Track", on_skip=None, touched=None):
     if model_name not in SUPPORTED_MODELS:
         raise ValueError(f"Unsupported model: {model_name}")
     stats = Counter()
+    imported = set()
     for record in records:
         track = _import_record(record, model_name, stats, on_skip)
         if touched is not None and track is not None:
             touched.add(track.pk)
+        if track is not None and model_name == "Track":
+            imported.add(track.pk)
+    if imported:
+        from library.services import resolver
+        resolver.resolve_for_tracks(imported)
     return stats
 
 

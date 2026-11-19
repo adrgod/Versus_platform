@@ -5,7 +5,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from .models import Track, Album, AlbumFacet, AlbumProfile, Artist, ArtistFacet, ArtistProfile, EnrichmentStatus
-from .services import enrichment, explorer
+from .services import enrichment, explorer, resolver
 from .services.importer import import_records
 
 BAND_ID = "11111111-1111-1111-1111-111111111111"
@@ -150,11 +150,13 @@ class EnrichmentTests(TestCase):
         enrichment.enrich_library(self.client_api)
         demo = AlbumProfile.objects.get(album__album_name="Unlisted Demo")
         self.assertEqual(demo.status, EnrichmentStatus.NOT_FOUND)
-        self.assertEqual(demo.country, "United States")
+        demo.album.refresh_from_db()
+        self.assertEqual(demo.album.resolved_country, "United States")
         links = {(link.facet.kind, link.facet.name) for link in AlbumFacet.objects.filter(album=demo.album).select_related("facet")}
         self.assertIn(("genre", "thrash metal"), links)
         self.assertNotIn(("member", "Tom Hunting"), links)  # members belong to the artist page only
-        self.assertEqual(demo.album.album_genre, "thrash metal, heavy metal")
+        self.assertEqual(demo.album.album_genre, "")
+        self.assertEqual(demo.album.resolved_genre, "thrash metal, heavy metal")
 
     def test_album_lookup_reuses_complete_artist_without_artist_requests(self):
         enrichment.enrich_library(self.client_api)
@@ -321,11 +323,13 @@ class AlbumInheritsArtistTagsTests(TestCase):
         enrichment.enrich_library(FakeMusicBrainz())
         album = Album.objects.get(album_name__startswith="Bonded")
         AlbumFacet.objects.filter(album=album, facet__kind="genre").delete()
-        Album.objects.filter(pk=album.pk).update(album_genre="")
         enrichment.inherit_artist_tags(album)  # no network
+        resolver.resolve_for_albums([album.pk])
         album.refresh_from_db()
-        self.assertEqual(album.album_genre, "thrash metal, heavy metal")
-        self.assertEqual(album.profile.country, "United States")
+        self.assertEqual(album.album_genre, "")  # the file tag column is never touched
+        self.assertEqual(album.resolved_genre, "thrash metal, heavy metal")
+        self.assertEqual(album.resolved_country, "United States")
+        self.assertEqual(album.resolved_sources["genre"], "artist:musicbrainz")
         names = set(AlbumFacet.objects.filter(album=album, facet__kind="genre").values_list("facet__name", flat=True))
         self.assertEqual(names, {"thrash metal", "heavy metal"})
 
@@ -490,17 +494,163 @@ class LocalCreditSourceTests(TestCase):
         self.assertEqual([(c["role"], c["name"]) for c in cleaned], [("producer", "Mark Whitaker")])
 
     def test_cells_fall_through_sources_and_say_which_one_was_used(self):
-        from .views import _credit_cells
-        credits = {
-            "musicbrainz": [{"kind": "producer", "name": "MB Producer", "role": "producer", "area": "", "count": 0}],
-            "tags": [{"kind": "composer", "name": "Gary Holt", "role": "", "area": "", "count": 4, "evidence": "Composer tag on 4 tracks"}],
-            "notes": [
-                {"kind": "producer", "name": "Notes Producer", "role": "", "area": "", "count": 0},
-                {"kind": "artwork", "name": "Rob Sandoval", "role": "", "area": "", "count": 0, "evidence": "Cover art by Rob Sandoval"},
-            ],
-        }
-        cells = {c["label"]: c for c in _credit_cells(credits, "Exodus", [{"name": "Gary Holt"}])}
-        self.assertEqual((cells["Main composer"]["entries"][0]["name"], cells["Main composer"]["source"]), ("Gary Holt", "MP3 tags"))
-        self.assertEqual((cells["Producer"]["entries"][0]["name"], cells["Producer"]["source"]), ("MB Producer", "MusicBrainz"))
-        self.assertEqual((cells["Artwork artist"]["entries"][0]["name"], cells["Artwork artist"]["source"]), ("Rob Sandoval", "Liner notes"))
-        self.assertEqual((cells["Sound engineer"]["entries"], cells["Sound engineer"]["source"]), ([], ""))
+        from .models import AlbumCredit
+        from .services import resolver
+        mb = [{"kind": "producer", "name": "MB Producer", "role": "producer", "area": "", "count": 0}]
+        tags = [AlbumCredit(kind="composer", name="Gary Holt", source="tags", count=4, evidence="Composer tag on 4 tracks")]
+        notes = [
+            AlbumCredit(kind="producer", name="Notes Producer", source="notes"),
+            AlbumCredit(kind="artwork", name="Rob Sandoval", source="notes", evidence="Cover art by Rob Sandoval"),
+        ]
+        cells = resolver.build_credits(mb, tags, notes, "Exodus", ["Gary Holt"])
+        self.assertEqual((cells["composer"]["entries"][0]["name"], cells["composer"]["source"]), ("Gary Holt", "tags"))
+        self.assertEqual((cells["producer"]["entries"][0]["name"], cells["producer"]["source"]), ("MB Producer", "musicbrainz"))
+        self.assertEqual((cells["artwork"]["entries"][0]["name"], cells["artwork"]["source"]), ("Rob Sandoval", "notes"))
+        self.assertEqual(cells["engineer"], {"source": "", "entries": []})
+        self.assertEqual(resolver.source_label("artist:musicbrainz"), "MusicBrainz, from the artist")
+
+
+
+class FillMissingDataTests(TestCase):
+    def setUp(self):
+        import_records([record(genre="", date="")])
+        get_user_model().objects.create_user("u", password="p")
+        self.web = Client()
+        self.web.login(username="u", password="p")
+
+    def percent(self):
+        with patch("library.views.repository.get_config", return_value={"quality_attributes": ["title", "date", "genre"]}):
+            return self.web.get(reverse("library:completeness-report")).context["overall_percent"]
+
+    def test_fill_raises_completeness_without_touching_file_tags(self):
+        from .services import fill_missing
+        before = self.percent()
+        self.assertLess(before, 100)
+
+        class Unreachable:
+            model = "m"
+
+            def status(self):
+                return {"reachable": False, "error": "no Ollama", "model_ready": False}
+
+        config = {"quality_attributes": ["title", "date", "genre"]}
+        with patch("library.services.fill_missing.repository.get_config", return_value=config), \
+                patch("library.services.enrichment.MusicBrainzClient", FakeMusicBrainz), \
+                patch("library.services.insights.OllamaClient", Unreachable):
+            stats = fill_missing.run()
+        self.assertEqual((stats.albums_before, stats.albums_after, stats.albums_filled), (1, 0, 1))
+        self.assertIn("no Ollama", stats.extraction_skipped)
+        self.assertGreater(self.percent(), before)
+        self.assertEqual(Album.objects.get().album_release_year, None)  # tags stay as read from the files
+
+    def test_button_is_on_the_page_and_starts_the_job(self):
+        page = self.web.get(reverse("library:completeness-report")).content.decode()
+        self.assertIn("Fill in Missing Data", page)
+        with patch("library.enrichment_service.start_job", return_value=True) as start:
+            response = self.web.post(reverse("library:fill-missing"))
+        start.assert_called_once_with("fill")
+        self.assertRedirects(response, reverse("library:completeness-report"))
+
+
+class TrackNumberFromFilenameTests(TestCase):
+    def test_parser(self):
+        from .services.fill_missing import track_number_from_filename as parse
+        self.assertEqual(parse("/m/01 - Intro.mp3"), 1)
+        self.assertEqual(parse("/m/07. Song.mp3"), 7)
+        self.assertEqual(parse("/m/(03) Song.mp3"), 3)
+        self.assertEqual(parse("/m/Exodus - 04 - Song.mp3"), 4)
+        self.assertEqual(parse("/m/2-05 Song.mp3"), 5)
+        self.assertEqual(parse("/m/06 Song.mp3", 10), 6)
+        self.assertIsNone(parse("/m/99 Luftballons.mp3", 10))
+        self.assertIsNone(parse("/m/Song.mp3", 10))
+        self.assertIsNone(parse("/m/00 - Song.mp3", 10))
+
+    def test_completeness_counts_a_number_found_in_the_file_name(self):
+        import_records([record(tracknumber="", file_path="/music/05 Bonded by Blood.mp3")])
+        get_user_model().objects.create_user("u", password="p")
+        web = Client()
+        web.login(username="u", password="p")
+        with patch("library.views.repository.get_config", return_value={"quality_attributes": ["tracknumber"]}):
+            response = web.get(reverse("library:completeness-report"))
+        self.assertEqual(response.context["overall_percent"], 100)
+        self.assertIsNone(Track.objects.get().track_number)  # the stored identity is untouched
+
+
+class DashboardCompletenessTests(TestCase):
+    def test_dashboard_average_matches_the_completeness_page_and_follows_fills(self):
+        import_records([record(genre="", date="")])
+        get_user_model().objects.create_user("u", password="p")
+        web = Client()
+        web.login(username="u", password="p")
+        from . import repository
+        config = {**repository.get_config(), "quality_attributes": ["title", "date", "genre"]}
+        with patch("library.views.repository.get_config", return_value=config):
+            before = web.get(reverse("library:dashboard")).context["stats"]
+            page = web.get(reverse("library:completeness-report")).context["overall_percent"]
+            self.assertEqual(before["completeness"], page)
+            self.assertEqual((before["missing_year_count"], before["missing_genre_count"]), (1, 1))
+            with patch("library.services.enrichment.MusicBrainzClient", FakeMusicBrainz):
+                enrichment.enrich_library(FakeMusicBrainz())
+            after = web.get(reverse("library:dashboard")).context["stats"]
+        self.assertGreater(after["completeness"], before["completeness"])
+        self.assertEqual(after["missing_genre_count"], 0)
+
+
+class AlbumYearEverywhereTests(TestCase):
+    def test_lists_show_the_year_found_online_when_the_tag_is_empty(self):
+        from . import queries
+        import_records([record(date="")])
+        enrichment.enrich_library(FakeMusicBrainz())
+        album = Album.objects.get()
+        self.assertIsNone(album.album_release_year)
+        self.assertEqual(queries.albums().get().release_year, 1985)
+        self.assertIsNone(queries.albums(tag_year_only=True).get().release_year)
+
+
+class ResolverTests(TestCase):
+    def setUp(self):
+        import_records([record(genre="", date="", tracknumber="", file_path="/music/05 - Bonded by Blood.mp3")])
+
+    def test_tags_beat_lookups_beat_notes_and_gaps_are_filled(self):
+        from .models import AlbumInsight, AlbumProfile
+        album = Album.objects.get()
+        AlbumInsight.objects.create(album=album, status="matched", release_date="1984-01-01")
+        resolver.resolve_for_albums([album.pk])
+        album.refresh_from_db()
+        self.assertEqual((album.resolved_year, album.resolved_sources["year"]), (1984, "notes"))
+
+        AlbumProfile.objects.create(album=album, status="matched", release_year=1985)
+        resolver.resolve_for_albums([album.pk])
+        album.refresh_from_db()
+        self.assertEqual((album.resolved_year, album.resolved_sources["year"]), (1985, "musicbrainz"))
+
+        Album.objects.filter(pk=album.pk).update(album_release_year=1986)  # a tag now exists
+        resolver.resolve_for_albums([album.pk])
+        album.refresh_from_db()
+        self.assertEqual((album.resolved_year, album.resolved_sources["year"]), (1986, "tags"))
+
+    def test_track_number_comes_from_the_file_name_when_the_tag_is_empty(self):
+        track = Track.objects.get()
+        self.assertEqual((track.resolved_number, track.resolved_sources), (5, {"number": "filename"}))
+        self.assertIsNone(track.track_number)
+
+    def test_resolving_twice_changes_nothing(self):
+        self.assertEqual(resolver.resolve_albums(), 0)
+        self.assertEqual(resolver.resolve_artists(), 0)
+        self.assertEqual(resolver.resolve_tracks(), 0)
+
+    def test_a_lookup_updates_what_every_page_shows(self):
+        enrichment.enrich_library(FakeMusicBrainz())
+        album = Album.objects.get()
+        self.assertEqual(album.resolved_year, 1985)
+        self.assertIn("thrash metal", album.resolved_genre)
+        self.assertEqual(album.resolved_country, "United States")
+        self.assertEqual(album.resolved_label, "Torrid Records")
+        self.assertEqual(album.resolved_sources["label"], "musicbrainz")
+        get_user_model().objects.create_user("u", password="p")
+        web = Client()
+        web.login(username="u", password="p")
+        self.assertContains(web.get(reverse("library:dashboard")), "1985")
+        self.assertContains(web.get(reverse("library:album-list")), "1985")
+        self.assertContains(web.get(reverse("library:artist-detail", args=(album.artist_id,))), "1985")
+        self.assertEqual(web.get(reverse("library:album-detail", args=(album.pk,))).context["year"], 1985)

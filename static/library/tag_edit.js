@@ -71,6 +71,18 @@
     input.focus();
   });
 
+  // "Apply found data": fill every empty tag that has a found value; Save writes them to the files.
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("[data-tag-editor] [data-fill-all]")) return;
+    const form = editor();
+    for (const button of form.querySelectorAll(".editor-field [data-fill]")) button.click();
+    for (const cell of form.querySelectorAll(".cell-input[data-suggest]")) {
+      if (cell.value.trim()) continue;
+      cell.value = cell.dataset.suggest;
+      cell.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
   document.addEventListener("focusin", (event) => {
     if (event.target.matches?.("[data-tag-editor] .cell-input")) event.target.select();
   });

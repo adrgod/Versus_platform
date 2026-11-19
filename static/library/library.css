@@ -919,3 +919,7 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 
 .data-source { display: block; margin-top: 6px; color: var(--subtle); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
 .data-source::before { content: "Source · "; opacity: .7; }
+
+.fill-form { display: flex; align-items: center; gap: 12px; }
+.fill-form small { color: var(--muted); font-size: 12px; }
+.completion-tree { margin-top: 4px; }

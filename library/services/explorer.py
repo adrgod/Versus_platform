@@ -79,42 +79,32 @@ def split_genres(value):
 
 def build_index():
     groups = {key: Group(key, label, level, ordered) for key, label, level, ordered in GROUPS}
-    albums = list(Album.objects.values("id", "artist_id", "album_genre", "album_publisher", "album_release_year"))
+    albums = list(Album.objects.values(
+        "id", "artist_id", "resolved_genre", "resolved_label", "resolved_year",
+    ))
     albums_by_artist = {}
     for album in albums:
         albums_by_artist.setdefault(album["artist_id"], set()).add(album["id"])
 
     album_profiles = {p.album_id: p for p in AlbumProfile.objects.filter(status="matched")}
-    notes_years = {
-        album_id: int(date[:4])
-        for album_id, date in AlbumInsight.objects.exclude(release_date="").values_list("album_id", "release_date")
-        if date[:4].isdigit()
-    }
     for album in albums:
         ids = {album["id"]}
         profile = album_profiles.get(album["id"])
-        for genre in split_genres(album["album_genre"]):
+        for genre in split_genres(album["resolved_genre"]):
             groups["genre"].add(genre, ids)
-        groups[FacetKind.LABEL].add(album["album_publisher"], ids)
-        year = album["album_release_year"] or (profile.release_year if profile else None) or notes_years.get(album["id"])
-        groups["decade"].add(decade_label(year), ids)
+        groups[FacetKind.LABEL].add(album["resolved_label"], ids)
+        groups["decade"].add(decade_label(album["resolved_year"]), ids)
         if profile:
             groups["rating"].add(rating_band(profile.rating), ids)
             kind = profile.secondary_types.split(",")[0].strip() if profile.secondary_types else profile.primary_type
             groups["release_type"].add(kind, ids)
 
-    matched = set()
-    for profile in ArtistProfile.objects.filter(status="matched"):
-        matched.add(profile.artist_id)
-        ids = albums_by_artist.get(profile.artist_id, set())
-        groups["country"].add(profile.country, ids)
-        groups["formed"].add(decade_label(profile.begin_year), ids)
-        groups["artist_type"].add(profile.artist_type, ids)
-    # Tag-derived artist facts for artists not matched online.
-    for artist in Artist.objects.exclude(pk__in=matched).values("id", "artist_country", "artist_formed_year"):
+    artist_types = dict(ArtistProfile.objects.filter(status="matched").values_list("artist_id", "artist_type"))
+    for artist in Artist.objects.values("id", "resolved_country", "resolved_formed_year"):
         ids = albums_by_artist.get(artist["id"], set())
-        groups["country"].add(artist["artist_country"], ids)
-        groups["formed"].add(decade_label(artist["artist_formed_year"]), ids)
+        groups["country"].add(artist["resolved_country"], ids)
+        groups["formed"].add(decade_label(artist["resolved_formed_year"]), ids)
+        groups["artist_type"].add(artist_types.get(artist["id"], ""), ids)
 
     for link in ArtistFacet.objects.values("artist_id", "facet__kind", "facet__name"):
         group = groups.get(link["facet__kind"])

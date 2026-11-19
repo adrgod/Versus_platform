@@ -15,7 +15,7 @@
   <article class="stat-cell stat-primary"><span>ARTISTS</span><strong>{{ stats.artist_count }}</strong><small>distinct names</small></article>
   <article class="stat-cell"><span>ALBUMS</span><strong>{{ stats.album_count }}</strong><small>indexed releases</small></article>
   <article class="stat-cell"><span>TRACKS</span><strong>{{ stats.track_count }}</strong><small>audio files</small></article>
-  <article class="stat-cell"><span>AVG. MATCH</span><strong>{% if stats.average_quality != None %}{{ stats.average_quality|floatformat:2 }}{% else %}--{% endif %}</strong><small>path confidence</small><small><a class="quiet-link" href="{% url 'library:completeness-report' %}">View Completeness ↗</a></small></article>
+  <article class="stat-cell"><span>AVG. COMPLETENESS</span><strong>{% if stats.completeness != None %}{{ stats.completeness }}%{% else %}--{% endif %}</strong><small>of the checked tags are filled</small><small><a class="quiet-link" href="{% url 'library:completeness-report' %}">View Completeness ↗</a></small></article>
 </section>
 <section class="dashboard-lower">
   <div class="section-heading"><div><span class="eyebrow">RECENTLY INDEXED</span><h2>In the crates</h2></div><a class="quiet-link" href="{% url 'library:album-list' %}">All albums <span>↗</span></a></div>

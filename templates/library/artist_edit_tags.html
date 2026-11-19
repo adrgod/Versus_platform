@@ -14,9 +14,9 @@
   <div class="editor-fields">
     {% for field in fields %}<label class="editor-field{% if field.error %} has-error{% endif %}">
       <span>{{ field.label }}</span>
-      <input type="text" name="h-{{ field.key }}" value="{{ field.value }}" data-initial="{{ field.initial }}" placeholder="{% if field.mixed %}Mixed — each file keeps its own{% else %}Empty{% endif %}" autocomplete="off" spellcheck="false"{% if field.error %} aria-invalid="true"{% endif %}>
+      <input type="text" name="h-{{ field.key }}" value="{{ field.value }}" data-initial="{{ field.initial }}" placeholder="{% if field.mixed %}Mixed — each file keeps its own{% elif field.suggested %}{{ field.origin }} says: {{ field.suggested }}{% else %}Empty{% endif %}" autocomplete="off" spellcheck="false"{% if field.error %} aria-invalid="true"{% endif %}>
       <input type="hidden" name="h-{{ field.key }}-initial" value="{{ field.initial }}">
-      {% if field.error %}<small class="cell-error">{{ field.error }}</small>{% elif field.mixed %}<small>Files differ</small>{% endif %}
+      {% if field.error %}<small class="cell-error">{{ field.error }}</small>{% elif field.mixed %}<small>Files differ</small>{% elif field.suggested %}<small>Empty in the files · {{ field.origin }} says · <button type="button" class="link-button" data-fill="{{ field.suggested }}">Use “{{ field.suggested }}”</button></small>{% endif %}
     </label>{% endfor %}
   </div>
 </section>
