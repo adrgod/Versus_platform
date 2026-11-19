@@ -17,7 +17,7 @@ from mutagen.id3 import APIC, ID3, ID3NoHeaderError, TALB, TIT2, TPE1, TPOS, TPU
 
 from library import repository
 from library.models import Track
-from library.services.files_scanner import derived_tags, find_cover_image, parse_batch_path
+from library.services.files_scanner import batch_date_from_path, derived_tags, find_cover_image
 
 FRAMES = {
     "artist": ("TPE1", TPE1),
@@ -135,7 +135,7 @@ def batch_files(day):
     stored = Track.objects.filter(track_file_path__contains=wanted).values_list("track_file_path", flat=True)
     return sorted(
         path for path in set(stored)
-        if parse_batch_path(path)[0] == day and repository.is_allowed_file(path)
+        if batch_date_from_path(path) == day and repository.is_allowed_file(path)
     )
 
 

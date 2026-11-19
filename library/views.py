@@ -16,6 +16,7 @@ from django.db.models import Count, F, IntegerField, Q, Value
 from django.db.models.functions import Cast, Coalesce, Lower, NullIf, Substr, TruncDate
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.defaultfilters import pluralize
 from django.urls import reverse
 from django.utils.http import urlencode
 from django.views.decorators.http import require_GET, require_POST
@@ -25,7 +26,7 @@ from . import enrichment_service, queries, repository
 from .models import (
 	Album, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
 )
-from .scan_service import start_scan
+from .scan_service import is_importing, read_local_tags, start_scan
 from .services.files_scanner import (
 	calculate_confidence_for_track,
 	read_artwork_from_id3,
@@ -35,7 +36,7 @@ from .services import enrichment as enrichment_api
 from .services import explorer
 from .services import insights as insights_api
 from .services.ollama import OllamaClient
-from .services.importer import import_records, prune_empty
+from .services.carry_over import import_and_carry_over
 from .services.tag_writer import TagSnapshot, batch_files, get_job, plan_file, start_batch_write
 
 
@@ -116,9 +117,9 @@ def refresh_library(request):
 
 	try:
 		if start_scan(source_folder):
-			messages.success(request, "Library scan started. This page will show the result when it finishes.")
+			messages.success(request, "Import Data started. This page shows the result when it finishes.")
 		else:
-			messages.warning(request, "A library scan is already running.")
+			messages.warning(request, "Import Data is already running.")
 	except (OSError, RuntimeError, ValueError) as error:
 		messages.error(request, str(error))
 	return redirect("library:dashboard")
@@ -308,6 +309,17 @@ def artist_list(request):
 	return render(request, "library/artist_list.html", {"artists": rows, "search": search})
 
 
+def _job_is_about(job, *, artist_id, album_id=None):
+	"""True while ``job`` runs for this artist or album, so its page should keep refreshing."""
+	if not job or not job.running:
+		return False
+	album_ids = job.options.get("album_ids") or []
+	artist_ids = job.options.get("artist_ids") or []
+	if album_id is not None:
+		return album_id in album_ids or artist_id in artist_ids
+	return artist_id in artist_ids or Album.objects.filter(pk__in=album_ids, artist_id=artist_id).exists()
+
+
 @login_required
 def artist_detail(request, artist_id):
 	artist = get_object_or_404(Artist, pk=artist_id)
@@ -331,6 +343,7 @@ def artist_detail(request, artist_id):
 			})
 	matched = profile is not None and profile.status == EnrichmentStatus.MATCHED
 	country = (profile.country if matched else "") or artist.artist_country
+	job = enrichment_service.running_job()
 	return render(request, "library/artist_detail.html", {
 		"artist": artist,
 		"albums": _with_covers(albums),
@@ -342,7 +355,9 @@ def artist_detail(request, artist_id):
 		"country": country,
 		"country_url": facet_url("country", country) if country else None,
 		"formed": (profile.begin_year if matched else None) or artist.artist_formed_year,
-		"job": enrichment_service.running_job(),
+		"job": job,
+		"job_here": _job_is_about(job, artist_id=artist.pk),
+		"importing": is_importing(),
 		"history": [
 			{**event, "cause_url": facet_url(FacetKind.CAUSE, event["cause_label"]) if event["cause_label"] else None}
 			for event in insights_api.artist_history(artist)
@@ -402,6 +417,7 @@ def album_detail(request, album_id):
 	year = album.album_release_year or (profile.release_year if matched else None) or insight_year
 	decade = explorer.decade_label(year)
 	lyrics_by_track = {item.track_id: item for item in TrackLyrics.objects.filter(track__album_id=album_id)}
+	job = enrichment_service.running_job()
 	lyric_tracks = [
 		{"track": track, "lyrics": lyrics_by_track[track.track_id]}
 		for track in tracks
@@ -430,7 +446,9 @@ def album_detail(request, album_id):
 		"lyric_themes": chips.get(FacetKind.LYRIC_THEME, []),
 		"documents": AlbumDocument.objects.filter(album_id=album_id).order_by("file_path"),
 		"lyric_tracks": lyric_tracks,
-		"job": enrichment_service.running_job(),
+		"job": job,
+		"job_here": _job_is_about(job, artist_id=album.artist_id, album_id=album_id),
+		"importing": is_importing(),
 	})
 
 
@@ -714,15 +732,13 @@ def confirm_tag_edit(request, track_id):
 		record["album_cover"] = read_artwork_from_id3(path)
 		cast(dict[str, object], record)["dq_confidence"] = calculate_confidence_for_track(record, record["file_path"])
 
-		# The tags may change which artist/album/track this is, so the old row is
-		# replaced and anything left empty is pruned. If the new tags cannot be
+		# The tags may change which artist/album/track this is: the old row is then
+		# replaced, its details are carried to the new entry, and anything left empty is pruned. If the new tags cannot be
 		# stored the whole change rolls back and the file is restored below.
 		with transaction.atomic():
-			Track.objects.filter(pk=track_id).delete()
-			stats = import_records([record])
+			stats, _ = import_and_carry_over([record])
 			if stats["skipped"]:
 				raise ValueError("Artist, album and title cannot be empty; the original file will be restored.")
-			prune_empty()
 	except Exception as error:
 		snapshot.restore()
 		messages.error(request, f"Could not save tags; the original tags were put back: {error}")
@@ -1008,32 +1024,49 @@ def enrichment_status(request):
 	})
 
 
-@login_required
-@require_POST
-def enrichment_start(request):
-	artist_id = request.POST.get("artist_id")
-	artist_ids = [int(artist_id)] if artist_id and artist_id.isdigit() else None
-	if enrichment_service.start_enrichment(refresh=request.POST.get("refresh") == "1", artist_ids=artist_ids):
-		messages.success(request, "MusicBrainz lookup started.")
-	else:
-		messages.warning(request, "A lookup is already running.")
-	if artist_ids and request.POST.get("next") == "artist":
-		return redirect("library:artist-detail", artist_id=artist_ids[0])
+def _job_busy(request):
+	job = enrichment_service.running_job()
+	label = job.label if job else "Another job"
+	messages.warning(request, f"{label} is already running. Try again when it finishes.")
+
+
+def _redirect_to_scope(album_id="", artist_id=""):
+	if str(album_id).isdigit():
+		return redirect("library:album-detail", album_id=int(album_id))
+	if str(artist_id).isdigit():
+		return redirect("library:artist-detail", artist_id=int(artist_id))
 	return redirect("library:enrichment")
 
 
 @login_required
 @require_POST
+def enrichment_start(request):
+	"""Lookup Details Online for the library, one artist or one album."""
+	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
+	album_ids = [int(album_id)] if album_id.isdigit() else None
+	artist_ids = [int(artist_id)] if artist_id.isdigit() and not album_ids else None
+	if enrichment_service.start_enrichment(
+		refresh=request.POST.get("refresh") == "1", artist_ids=artist_ids, album_ids=album_ids
+	):
+		messages.success(request, "Lookup Details Online started.")
+	else:
+		_job_busy(request)
+	return _redirect_to_scope(album_id, artist_id)
+
+
+@login_required
+@require_POST
 def enrichment_stop(request):
-	if enrichment_service.stop_job(request.POST.get("job", "musicbrainz")):
-		messages.info(request, "The lookup will stop after the current item.")
+	kind = request.POST.get("job", "musicbrainz")
+	if enrichment_service.stop_job(kind):
+		messages.info(request, f"{enrichment_service.JOB_LABELS.get(kind, 'The job')} will stop after the current item.")
 	return redirect("library:enrichment")
 
 
 @login_required
 @require_POST
 def notes_start(request):
-	"""Read liner notes and lyrics (and extract facts) for all albums, one artist or one album."""
+	"""Enrich Data with AI: read liner notes and lyrics, then extract facts, for all albums, one artist or one album."""
 	options = {
 		"refresh": request.POST.get("refresh") == "1",
 		"extract": request.POST.get("extract", "1") == "1",
@@ -1045,14 +1078,57 @@ def notes_start(request):
 	elif artist_id.isdigit():
 		options["artist_ids"] = [int(artist_id)]
 	if enrichment_service.start_job("notes", **options):
-		messages.success(request, "Reading liner notes and lyrics started.")
+		messages.success(request, "Enrich Data with AI started.")
 	else:
-		messages.warning(request, "A lookup is already running.")
+		_job_busy(request)
+	return _redirect_to_scope(album_id, artist_id)
+
+
+@login_required
+@require_POST
+def read_local_tags_view(request):
+	"""Read Local MP3 Tags again for one album or one artist, then return to its page."""
+	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
 	if album_id.isdigit():
-		return redirect("library:album-detail", album_id=int(album_id))
-	if artist_id.isdigit():
-		return redirect("library:artist-detail", artist_id=int(artist_id))
-	return redirect("library:enrichment")
+		scope = {"album_ids": [int(album_id)]}
+	elif artist_id.isdigit():
+		scope = {"artist_ids": [int(artist_id)]}
+	else:
+		messages.error(request, "Choose an artist or an album for Read Local MP3 Tags.")
+		return redirect("library:dashboard")
+	try:
+		result = read_local_tags(**scope)
+	except (OSError, ValueError) as error:
+		messages.error(request, f"Read Local MP3 Tags failed: {error}")
+		return _redirect_to_scope(album_id, artist_id)
+	if result is None:
+		messages.warning(request, "Import Data is running. Try Read Local MP3 Tags again when it finishes.")
+		return _redirect_to_scope(album_id, artist_id)
+
+	changed = result.updated + result.replaced
+	parts = [f"{result.files_read} file{pluralize(result.files_read)} read"]
+	parts.append(f"{changed} track{pluralize(changed)} updated" if changed else "no changes")
+	if result.missing:
+		parts.append(f"{len(result.missing)} file{pluralize(len(result.missing))} not found (Import Data tidies these up)")
+	if result.errors:
+		parts.append(f"{len(result.errors)} file{pluralize(len(result.errors))} could not be read")
+	moved = [
+		f"the new {noun}" if count == 1 else f"{count} new {noun}s" for count, noun in
+		((result.albums_carried, "album"), (result.artists_carried, "artist")) if count
+	]
+	if moved:
+		parts.append(f"details carried over to {' and '.join(moved)}")
+	level = messages.warning if result.missing or result.errors else messages.success
+	level(request, "Read Local MP3 Tags: " + " · ".join(parts) + ".")
+
+	# A big tag change can move the tracks to a new album/artist row; follow them there.
+	if album_id.isdigit() and not Album.objects.filter(pk=int(album_id)).exists():
+		new_album = Track.objects.filter(pk__in=result.track_ids).values_list("album_id", flat=True).first()
+		return redirect("library:album-detail", album_id=new_album) if new_album else redirect("library:album-list")
+	if artist_id.isdigit() and not Artist.objects.filter(pk=int(artist_id)).exists():
+		new_artist = Track.objects.filter(pk__in=result.track_ids).values_list("album__artist_id", flat=True).first()
+		return redirect("library:artist-detail", artist_id=new_artist) if new_artist else redirect("library:artist-list")
+	return _redirect_to_scope(album_id, artist_id)
 
 
 @login_required
@@ -1070,9 +1146,9 @@ def set_external_id(request, kind, object_id):
 		messages.error(request, str(error))
 		return redirect("library:enrichment")
 	if enrichment_service.start_enrichment(artist_ids=[artist.pk]):
-		messages.success(request, f"MusicBrainz ID saved; looking {artist.artist_name} up again.")
+		messages.success(request, f"MusicBrainz ID saved; Lookup Details Online started for {artist.artist_name}.")
 	else:
-		messages.warning(request, "MusicBrainz ID saved. It will be used on the next lookup (one is running now).")
+		messages.warning(request, "MusicBrainz ID saved. It is used the next time Lookup Details Online runs (another job is running now).")
 	return redirect("library:enrichment")
 
 

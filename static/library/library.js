@@ -249,6 +249,13 @@
     event.preventDefault();
     const method = (form.method || "get").toUpperCase();
     const url = new URL(form.action || window.location.href, window.location.href);
+    // Show which action is working until the next page arrives.
+    const submitter = event.submitter || form.querySelector("[type=submit]");
+    if (submitter && method !== "GET") {
+      submitter.classList.add("is-busy");
+      submitter.setAttribute("aria-busy", "true");
+      for (const button of document.querySelectorAll(".app-frame form button[type=submit]")) button.disabled = true;
+    }
     if (method === "GET") {
       for (const [key, value] of new FormData(form)) url.searchParams.set(key, value);
       navigate(url.href);
@@ -261,7 +268,7 @@
     });
   });
 
-  async function navigate(url, options = {}, addHistory = true) {
+  async function navigate(url, options = {}, addHistory = true, keepScroll = false) {
     try {
       const response = await fetch(url, {
         ...options,
@@ -283,7 +290,7 @@
       currentFrame.replaceWith(newFrame);
       document.title = parsed.title;
       if (addHistory) history.pushState({}, "", response.url || url);
-      window.scrollTo({ top: 0, behavior: "instant" });
+      if (!keepScroll) window.scrollTo({ top: 0, behavior: "instant" });
       scheduleScanPolling();
       window.dispatchEvent(new Event("library:page-updated"));
     } catch (error) {
@@ -308,12 +315,17 @@
   let scanPollTimer;
   function scheduleScanPolling() {
     window.clearTimeout(scanPollTimer);
-    const activeScan = document.querySelector(".dashboard-heading[data-scan-status='scanning']");
-    if (!activeScan) return;
+    // Import Data on the Overview, or a background job shown on any page ([data-poll]).
+    const active = document.querySelector(".dashboard-heading[data-scan-status='scanning'], [data-poll]");
+    if (!active) return;
     scanPollTimer = window.setTimeout(async () => {
-      await navigate(window.location.href, {}, false);
-      scheduleScanPolling();
-    }, 2000);
+      // Do not swap the page under an open menu or a half-typed form.
+      if (document.querySelector(".app-frame details[open].settings-menu") || document.activeElement?.matches("input[type=text], input[type=search], input:not([type]), textarea")) {
+        scheduleScanPolling();
+        return;
+      }
+      await navigate(window.location.href, {}, false, true);
+    }, Number(active.dataset.poll) || 2500);
   }
 
   scheduleScanPolling();

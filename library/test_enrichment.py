@@ -205,7 +205,7 @@ class ExplorerTests(TestCase):
         with patch("library.views.enrichment_service.start_enrichment") as start_lookup:
             lookup_page = client.get(reverse("library:enrichment"))
         self.assertEqual(lookup_page.status_code, 200)
-        self.assertContains(lookup_page, "Start online lookup")
+        self.assertContains(lookup_page, "Lookup Details Online")
         start_lookup.assert_not_called()
         exodus = Artist.objects.get(artist_name="Exodus")
         artist_page = client.get(reverse("library:artist-detail", args=(exodus.pk,)))

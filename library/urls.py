@@ -22,6 +22,7 @@ urlpatterns = [
     path("location/", views.folder_browser, name="folder-browser"),
     path("location/choose/", views.choose_folder, name="choose-folder"),
     path("refresh/", views.refresh_library, name="refresh"),
+    path("tags/read/", views.read_local_tags_view, name="read-local-tags"),
     path("artists/", views.artist_list, name="artist-list"),
     path("artists/<int:artist_id>/", views.artist_detail, name="artist-detail"),
     path("albums/", views.album_list, name="album-list"),

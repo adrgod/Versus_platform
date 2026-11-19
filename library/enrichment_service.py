@@ -1,7 +1,8 @@
-"""Runs the online lookups in a background thread so the web pages stay responsive.
+"""Runs Lookup Details Online and Enrich Data with AI in a background thread.
 
-Two kinds of job share one lock (both write to the same SQLite file): "musicbrainz"
-(services.enrichment) and "notes" (services.insights: liner notes, lyrics, extraction).
+Both kinds of job share one lock (both write to the same SQLite file): "musicbrainz"
+(Lookup Details Online, services.enrichment) and "notes" (Enrich Data with AI,
+services.insights: liner notes, lyrics, extraction by the local model).
 """
 import threading
 from dataclasses import dataclass, field
@@ -24,7 +25,16 @@ class BackgroundJob:
     stop_requested: bool = False
     stats: object = None
 
+    @property
+    def label(self):
+        return JOB_LABELS.get(self.kind, self.kind)
 
+
+# The names used for these actions everywhere in the app.
+JOB_LABELS = {
+    "musicbrainz": "Lookup Details Online",
+    "notes": "Enrich Data with AI",
+}
 RUNNERS = {
     "musicbrainz": (enrich_library, EnrichmentStats),
     "notes": (insights.run, insights.InsightStats),
@@ -66,8 +76,8 @@ def start_job(kind, **options):
     return True
 
 
-def start_enrichment(refresh=False, artist_ids=None):
-    return start_job("musicbrainz", refresh=refresh, artist_ids=artist_ids)
+def start_enrichment(refresh=False, artist_ids=None, album_ids=None):
+    return start_job("musicbrainz", refresh=refresh, artist_ids=artist_ids, album_ids=album_ids)
 
 
 def stop_job(kind):

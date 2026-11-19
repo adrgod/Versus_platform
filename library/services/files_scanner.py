@@ -214,6 +214,22 @@ def parse_batch_path(file_path):
     return datetime.strptime(parts[index], "%Y%m%d").date(), parts[index + 1].strip()
 
 
+def batch_date_from_path(file_path):
+    """Batch date of a file: the closest ``YYYYMMDD`` folder above it, at any depth.
+
+    Looser than :func:`parse_batch_path` on purpose: ``20261013/Label/Band - Album/01.mp3``
+    still belongs to the 13 Oct 2026 batch even though band and album share a folder
+    (artist/album are then not derived from the path). Returns None without such a folder.
+    """
+    for name in reversed(Path(file_path).parent.parts):
+        if len(name) == 8 and name.isdigit():
+            try:
+                return datetime.strptime(name, "%Y%m%d").date()
+            except ValueError:
+                continue
+    return None
+
+
 def read_file_metadata(file_path, config, image_cache=None):
     try:
         file_info = EasyID3(file_path)
@@ -264,7 +280,7 @@ def read_file_metadata(file_path, config, image_cache=None):
             file_path, file_data.get("album", ""), file_data.get("artist", ""), image_cache
         )
 
-    file_data["batch_date"] = parse_batch_path(file_path)[0]
+    file_data["batch_date"] = batch_date_from_path(file_path)
 
     return file_data
 
@@ -363,6 +379,12 @@ def read_all_metadata(source_folder, config, errors=None):
             if file_path.is_file() and file_path.suffix.lower() == ".mp3"
         )
 
+    return read_metadata_for_files(mp3_files, config, errors=errors)
+
+
+def read_metadata_for_files(mp3_files, config, errors=None):
+    """Read and post-process the given MP3 files (whole albums give the best length class)."""
+    mp3_files = [Path(file_path) for file_path in mp3_files]
     tracks = []
     image_cache = {}
     for file_path in mp3_files:

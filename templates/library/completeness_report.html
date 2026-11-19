@@ -1,13 +1,13 @@
 {% extends "library/base.html" %}
-{% block title %}Tag completeness{% endblock %}
+{% block title %}Completeness{% endblock %}
 {% block content %}
-<div class="breadcrumb"><a href="{% url 'library:dashboard' %}">Overview</a><span>/</span>Tag completeness</div>
-<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA COMPLETENESS</span><h1>Tag completeness</h1><p class="subheading">{{ complete_count }} complete · {{ incomplete_count }} need attention · {{ album_count }} album{{ album_count|pluralize }}</p></div></section>
+<div class="breadcrumb"><a href="{% url 'library:dashboard' %}">Overview</a><span>/</span>Completeness</div>
+<section class="page-heading"><div><span class="eyebrow">CATALOG / DATA COMPLETENESS</span><h1>Completeness</h1><p class="subheading">{{ complete_count }} complete · {{ incomplete_count }} need attention · {{ album_count }} album{{ album_count|pluralize }}</p></div></section>
 
 <section class="completion-tree" aria-label="Completeness by batch, artist and album">
   {% for batch in batches %}
     <details class="completion-batch">
-      <summary><strong>{% if batch.date %}{{ batch.date|date:"j M Y" }}{% else %}Unbatched{% endif %}</strong><span>{{ batch.complete_count }} / {{ batch.album_count }} albums complete</span></summary>
+      <summary><strong>{% if batch.date %}Batch {{ batch.date|date:"j M Y" }}{% else %}No batch{% endif %}</strong><small class="batch-folder">{% if batch.date %}folder {{ batch.date|date:"Ymd" }}{% else %}files outside a YYYYMMDD folder{% endif %}</small><span>{{ batch.complete_count }} / {{ batch.album_count }} albums complete</span></summary>
       <div class="completion-batch-content">
         {% for artist in batch.artists %}
           <details class="completion-artist">

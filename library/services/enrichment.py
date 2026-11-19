@@ -159,8 +159,14 @@ def artists_to_enrich(refresh=False, artist_ids=None):
     return list(queryset.filter(pk__in=pending | with_new_albums))
 
 
-def enrich_library(client=None, *, refresh=False, artist_ids=None, progress=None, should_stop=None):
+def enrich_library(client=None, *, refresh=False, artist_ids=None, album_ids=None, progress=None, should_stop=None):
+    """Lookup Details Online for the library, some artists, or only some albums.
+
+    With ``album_ids`` each album's artist is matched again, but only those albums are looked up.
+    """
     client = client or MusicBrainzClient()
+    if album_ids:
+        artist_ids = sorted(set(Album.objects.filter(pk__in=album_ids).values_list("artist_id", flat=True)))
     artists = artists_to_enrich(refresh=refresh, artist_ids=artist_ids)
     stats = EnrichmentStats(artists_total=len(artists))
     for artist in artists:
@@ -170,7 +176,7 @@ def enrich_library(client=None, *, refresh=False, artist_ids=None, progress=None
         if progress:
             progress(stats)
         try:
-            enrich_artist(client, artist, stats=stats, refresh=refresh or artist_ids is not None)
+            enrich_artist(client, artist, stats=stats, refresh=refresh or artist_ids is not None, only_album_ids=album_ids)
         except Exception as error:  # one artist's problem must not end the whole run
             message = _error_text(error)
             stats.errors.append(f"{artist.artist_name}: {message}")
@@ -193,7 +199,7 @@ def _mark_error(model, note, **owner):
         pass  # e.g. the artist or album was deleted by a library scan meanwhile
 
 
-def enrich_artist(client, artist, *, stats=None, refresh=True):
+def enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=None):
     stats = stats or EnrichmentStats()
     profile, _ = ArtistProfile.objects.get_or_create(artist=artist)
     albums = list(artist.album_set.all())
@@ -224,6 +230,8 @@ def enrich_artist(client, artist, *, stats=None, refresh=True):
     stats.artists_matched += 1
 
     for album in albums:
+        if only_album_ids and album.pk not in only_album_ids:
+            continue
         album_profile = AlbumProfile.objects.filter(album=album).first()
         if not refresh and album_profile and album_profile.status in (EnrichmentStatus.MATCHED, EnrichmentStatus.NOT_FOUND):
             continue
