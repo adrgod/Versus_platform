@@ -316,3 +316,7 @@ Everything below is stored on the server against the Django login, so it follows
 - equalizer (5 bands) and volume
 - played history (a play counts after 30 s, or half of a shorter track), listed under **History**
 - star ratings (1-5) of tracks and albums on the album page and in History; click the same star again to clear
+
+## Credits
+
+City-to-country matching uses a trimmed list of cities from [GeoNames](https://www.geonames.org) (CC BY 4.0), kept in `library/data/cities.tsv.gz`. Cities it does not know are looked up once on OpenStreetMap Nominatim and remembered in the database.

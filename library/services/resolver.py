@@ -13,9 +13,10 @@ from library.models import (
     Album, AlbumCredit, AlbumFacet, AlbumInsight, Artist, EnrichmentStatus, FacetKind, Track,
 )
 from library.services.local_credits import SOURCE_LABELS as _LABELS
+from library.services.places import locate
 
 INHERITED = "from artist"  # AlbumFacet.detail of a genre copied from the artist
-SOURCE_LABELS = {**_LABELS, "filename": "File name", "metal-archives": "Metal Archives", "discogs": "Discogs"}
+SOURCE_LABELS = {**_LABELS, "filename": "File name", "city lookup": "City lookup", "metal-archives": "Metal Archives", "discogs": "Discogs"}
 CREDIT_SOURCES = ("musicbrainz", "discogs", "tags", "notes")
 CHUNK = 400
 
@@ -65,14 +66,24 @@ def resolve_artists(artist_ids=None):
         profile = getattr(artist, "profile", None)
         metal = getattr(artist, "metal_archives", None)
         sources = {}
+        # A tag that holds a city ("Budapest") still gets a country: from the other sources, else a
+        # city lookup. The city is kept in resolved_place and shown in brackets after the country.
+        others = []  # countries the lookups gave, best first
+        if _matched(profile) and profile.country:
+            others.append((profile.country, "musicbrainz"))
+        if _matched(metal) and metal.country:
+            others.append((metal.country, "metal-archives"))
+        country, place = "", ""
         if artist.artist_country:
-            country, sources["country"] = artist.artist_country, "tags"
-        elif _matched(profile) and profile.country:
-            country, sources["country"] = profile.country, "musicbrainz"
-        elif _matched(metal) and metal.country:
-            country, sources["country"] = metal.country, "metal-archives"
-        else:
-            country = ""
+            country, place, via = locate(artist.artist_country, hint_country=others[0][0] if others else "")
+            if via == "hint":
+                sources["country"] = others[0][1]
+            elif country:
+                sources["country"] = "city lookup" if via == "city" else "tags"
+            else:  # not a country nor a city we know: show it as it is, as before
+                country, place, sources["country"] = artist.artist_country, "", "tags"
+        elif others:
+            (country, sources["country"]) = others[0]
         if artist.artist_formed_year:
             formed, sources["formed_year"] = artist.artist_formed_year, "tags"
         elif _matched(profile) and profile.begin_year:
@@ -81,9 +92,9 @@ def resolve_artists(artist_ids=None):
             formed, sources["formed_year"] = metal.formed_year, "metal-archives"
         else:
             formed = None
-        _set(artist, resolved_country=country, resolved_formed_year=formed, resolved_sources=sources)
+        _set(artist, resolved_country=country, resolved_place=place, resolved_formed_year=formed, resolved_sources=sources)
         result.append(artist)
-    return _save(result, ["resolved_country", "resolved_formed_year", "resolved_sources"])
+    return _save(result, ["resolved_country", "resolved_place", "resolved_formed_year", "resolved_sources"])
 
 
 # -- albums ----------------------------------------------------------------------

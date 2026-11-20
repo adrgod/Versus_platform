@@ -35,6 +35,7 @@ cs Serbia and Montenegro|su Soviet Union|dd East Germany|yu Yugoslavia|cz Czecho
 
 def _build():
     table = {}
+    names = {}
     for chunk in _COUNTRIES.replace("\n", "|").split("|"):
         chunk = chunk.strip()
         if not chunk:
@@ -43,12 +44,13 @@ def _build():
         if re.fullmatch(r"[a-z]{2}(-[a-z]{3})?", head) and rest:
             code = head
             table[rest.casefold()] = code
+            names.setdefault(code, rest)
         else:  # an alias of the previous code
             table[chunk.casefold()] = code
-    return table
+    return table, names
 
 
-NAMES = _build()
+NAMES, CODE_NAMES = _build()  # CODE_NAMES: "hu" -> "Hungary" (the first name listed for a code)
 # Names with no modern flag on flagcdn.com
 NO_FLAG = {"cs", "su", "dd", "yu"}
 

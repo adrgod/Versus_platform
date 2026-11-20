@@ -322,6 +322,7 @@ def artist_list(request):
 		if year:
 			years.setdefault(artist_id, set()).add(str(year))
 	countries = dict(Artist.objects.filter(pk__in=ids).exclude(resolved_country="").values_list("pk", "resolved_country"))
+	places = dict(Artist.objects.filter(pk__in=ids).exclude(resolved_place="").values_list("pk", "resolved_place"))
 	main_genre = {}
 	for artist_id, name in (
 		ArtistFacet.objects.filter(artist_id__in=ids, facet__kind=FacetKind.GENRE)
@@ -345,6 +346,7 @@ def artist_list(request):
 		artist.batches = batches.get(artist.pk, set())
 		artist.release_years = years.get(artist.pk, set())
 		artist.country = countries.get(artist.pk, "")
+		artist.place = places.get(artist.pk, "")
 		artist.main_genre = main_genre.get(artist.pk, "")
 		artist.voice = voice.get(artist.pk, "")
 
@@ -462,6 +464,7 @@ def artist_detail(request, artist_id):
 		"lineup": lineup,
 		"discography": profile.discography if matched else [],
 		"country": country,
+		"place": artist.resolved_place,
 		"country_url": facet_url("country", country) if country else None,
 		"formed": artist.resolved_formed_year,
 		"matched_on": _matched_on(artist=artist),
@@ -558,6 +561,7 @@ def album_detail(request, album_id):
 		"genres": genres,
 		"credit_cells": _credit_cells(album.resolved_credits),
 		"country": country,
+		"place": album.artist.resolved_place,
 		"country_url": facet_url("country", country) if country else None,
 		"main_genre": genre_names[0] if genre_names else "",
 		"main_genre_url": facet_url(FacetKind.GENRE, genre_names[0]) if genre_names else None,

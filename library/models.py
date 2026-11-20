@@ -11,6 +11,7 @@ class Artist(models.Model):
     # The value every page shows: the file tag, else what lookups found. Rebuilt by
     # services/resolver.py; ``resolved_sources`` says where each value came from.
     resolved_country = models.CharField(max_length=100, blank=True)
+    resolved_place = models.CharField(max_length=150, blank=True)  # a city the country tag held, shown in brackets
     resolved_formed_year = models.IntegerField(null=True, blank=True)
     resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
@@ -397,3 +398,12 @@ class Review(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "album"], name="one_review_per_user_album")]
+
+
+class PlaceCountry(models.Model):
+    """A city looked up online and the country found (blank = nobody knew it), so it is never searched twice."""
+
+    place_key = models.CharField(max_length=150, unique=True)  # lower case, no accents
+    place = models.CharField(max_length=150)
+    country = models.CharField(max_length=100, blank=True)
+    checked_at = models.DateTimeField(auto_now=True)

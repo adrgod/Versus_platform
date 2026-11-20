@@ -6,9 +6,7 @@ from django.db import migrations, models
 
 def resolve_everything(apps, schema_editor):
     """Fill the resolved_* columns (earlier migrations cannot: the resolver reads the tables made here)."""
-    from library.services import resolver
-
-    resolver.resolve_all()
+    # Nothing to do: migration 0019 fills the resolved_* columns (the resolver needs every column it reads).
 
 
 class Migration(migrations.Migration):

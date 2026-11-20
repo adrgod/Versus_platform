@@ -1008,3 +1008,5 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .stars .rate-clear:hover { color: var(--accent, #6366f1); opacity: 1; }
 .review-score .rate-clear:hover { color: var(--accent); }
 .rate-clear:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
+
+.place { color: var(--muted); font-weight: 400; }

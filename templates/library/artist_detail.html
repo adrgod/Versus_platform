@@ -8,7 +8,7 @@
 {% include "library/_metadata_actions.html" with scope="artist_id" object_id=artist.pk noun="artist" %}
 
 {% if matched or country or formed %}<section class="fact-strip" aria-label="Artist facts">
-  {% if country %}<div><span class="eyebrow">COUNTRY</span><a href="{{ country_url }}">{{ country|flag }}{{ country }}</a>{% if matched and profile.begin_area and profile.begin_area != country %}<small>from {{ profile.begin_area }}</small>{% endif %}</div>{% endif %}
+  {% if country %}<div><span class="eyebrow">COUNTRY</span><a href="{{ country_url }}">{{ country|flag }}{{ country }}</a>{% if place %} <small class="place">({{ place }})</small>{% endif %}{% if matched and profile.begin_area and profile.begin_area != country and profile.begin_area != place %}<small>from {{ profile.begin_area }}</small>{% endif %}</div>{% endif %}
   {% if formed %}<div><span class="eyebrow">{% if matched and profile.artist_type == "Person" %}BORN / ACTIVE FROM{% else %}FORMED{% endif %}</span><strong>{{ formed }}</strong>{% if matched and profile.end_year %}<small>until {{ profile.end_year }}</small>{% endif %}</div>{% endif %}
   {% if matched and profile.rating != None %}<div><span class="eyebrow">RATING</span><strong>★ {{ profile.rating|floatformat:2 }}</strong><small>{{ profile.rating_votes }} vote{{ profile.rating_votes|pluralize }}</small></div>{% endif %}
   {% if genres %}<div class="fact-wide"><span class="eyebrow">GENRES</span><div class="tag-chips">{% for genre in genres %}<a class="tag-chip" href="{{ genre.url }}">{{ genre.name }}</a>{% endfor %}</div></div>{% endif %}
