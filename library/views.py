@@ -369,7 +369,7 @@ def artist_list(request):
 			ordered = sorted(values, key=str.casefold)
 		options = [
 			{"value": value, "label": (
-				date.fromisoformat(value).strftime("%-d %b %Y") if key == "batch"
+				_day_label(date.fromisoformat(value)) if key == "batch"
 				else f"{value} albums" if key == "albums" and value != "1" else "1 album" if key == "albums"
 				else value.capitalize() if key == "voice" else value
 			)}
@@ -387,6 +387,11 @@ def artist_list(request):
 		"facets": facets,
 		"filtered": any(chosen.values()),
 	})
+
+
+def _day_label(day):
+	""""5 Oct 2026"; %-d is not understood by strftime on Windows, so the day is written by hand."""
+	return f"{day.day} {day:%b %Y}"
 
 
 def _job_is_about(job, *, artist_id, album_id=None):
@@ -683,7 +688,7 @@ def _completeness_group_key(by, album):
 	"""(sort key, label, date) of the group an album belongs to for the chosen grouping."""
 	if by == "batch":
 		day = album.album_batch_date
-		return (day is None, -(day.toordinal()) if day else 0), (f"Batch {day:%-d %b %Y}" if day else "No batch"), day
+		return (day is None, -(day.toordinal()) if day else 0), (f"Batch {_day_label(day)}" if day else "No batch"), day
 	year = album.resolved_year
 	if by in ("decade", "year") and year:
 		value = explorer.decade_label(year) if by == "decade" else str(year)
