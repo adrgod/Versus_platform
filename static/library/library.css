@@ -1010,3 +1010,7 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .rate-clear:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
 
 .place { color: var(--muted); font-weight: 400; }
+
+.folder-roots, .folder-goto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
+.folder-roots .is-current { border-color: var(--accent); color: var(--accent-text); }
+.folder-goto input { flex: 1 1 260px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }

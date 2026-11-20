@@ -99,7 +99,7 @@ def folder_browser(request):
 		"current": current,
 		"directories": directories,
 		"parent": parent,
-		"roots": roots,
+		"roots": roots if len(roots) > 1 else [],  # the switcher (drives) only helps with several
 		"selected_folder": selected_folder,
 		"messages_to_show": messages_to_show,
 	})

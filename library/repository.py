@@ -1,11 +1,14 @@
 import base64
 import json
+import os
+import string
 from pathlib import Path
 
 from django.conf import settings
 
 
 PROJECT_ROOT = Path(settings.BASE_DIR)
+IS_WINDOWS = os.name == "nt"
 
 
 def get_config():
@@ -21,6 +24,19 @@ def get_log_directory():
     return PROJECT_ROOT / "db" / "tag_write_logs"
 
 
+def windows_drives():
+    """Every drive letter that is present (C:\\, D:\\, a USB stick...), Windows only."""
+    drives = []
+    for letter in string.ascii_uppercase:
+        drive = Path(f"{letter}:\\")
+        try:
+            if drive.is_dir():
+                drives.append(drive)
+        except OSError:  # an empty card reader, a disconnected network drive
+            continue
+    return drives
+
+
 def get_allowed_roots():
     config = get_config()
     configured_roots = config.get("allowed_library_roots")
@@ -29,8 +45,14 @@ def get_allowed_roots():
     roots = []
     for configured_root in configured_roots:
         root = Path(configured_root).expanduser().resolve()
-        if root.is_dir():
-            roots.append(root)
+        if IS_WINDOWS and root.parent == root:
+            # "/" means the whole computer: on Windows that is every drive, not just the current one.
+            candidates = windows_drives() or [root]
+        else:
+            candidates = [root]
+        for candidate in candidates:
+            if candidate.is_dir() and candidate not in roots:
+                roots.append(candidate)
     return roots
 
 

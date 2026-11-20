@@ -4,6 +4,8 @@
 <section class="page-heading"><div><span class="eyebrow">LIBRARY CONTROL / SOURCE</span><h1>Choose a folder</h1><p class="subheading">Select a directory on the host computer.</p></div><a class="button button-light" href="{% url 'library:dashboard' %}">Cancel</a></section>
 {% for error in messages_to_show %}<div class="message error">{{ error }}</div>{% endfor %}
 <section class="folder-browser">
+  {% if roots %}<div class="folder-roots" role="group" aria-label="Drives and locations"><span class="eyebrow">DRIVES</span>{% for root in roots %}<a class="button button-light{% if current == root or root in current.parents %} is-current{% endif %}" href="?path={{ root|urlencode }}">{{ root }}</a>{% endfor %}</div>{% endif %}
+  <form method="get" class="folder-goto"><label class="eyebrow" for="folder-goto-path">GO TO A PATH</label><input id="folder-goto-path" name="path" type="text" placeholder="D:\Music or /Volumes/Music" autocomplete="off" spellcheck="false"><button class="button button-light" type="submit">Go</button></form>
   <div class="folder-path"><span class="eyebrow">BROWSING</span><strong>{{ current|default:"No permitted folder is available" }}</strong></div>
   <div class="folder-actions">
     {% if parent %}<a class="folder-row folder-parent" href="?path={{ parent|urlencode }}"><span class="folder-symbol">↑</span><span>Parent folder</span><span class="row-end">UP</span></a>{% endif %}
@@ -11,5 +13,5 @@
   </div>
   {% if current %}<form method="post" action="{% url 'library:choose-folder' %}" class="folder-select-form">{% csrf_token %}<input type="hidden" name="folder" value="{{ current }}"><span>Use this folder as the source for Import Data?</span><button class="button button-primary" type="submit">Select this folder</button></form>{% endif %}
 </section>
-<p class="security-note">Browsing starts at the host Mac’s filesystem root. macOS privacy permissions still limit which folders this app can list.</p>
+<p class="security-note">The computer’s own permissions still limit which folders can be listed. Other drives appear above on Windows; on a Mac look under /Volumes. Folders outside the roots in config.json (allowed_library_roots) are refused.</p>
 {% endblock %}
