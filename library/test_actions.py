@@ -1,4 +1,4 @@
-"""Import Data / Read Local MP3 Tags / Lookup Details Online / Enrich Data with AI."""
+"""Import Data / Read Local MP3 Tags / Lookup MusicBrainz / Enrich Data with AI."""
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -104,7 +104,7 @@ class MetadataActionViewTests(LocalTagsTestCase):
         for url in (reverse("library:album-detail", args=[self.album.pk]),
                     reverse("library:artist-detail", args=[self.album.artist_id])):
             page = self.web.get(url).content.decode()
-            for label in ("Read Local MP3 Tags", "Lookup Details Online", "Enrich Data with AI"):
+            for label in ("Read Local MP3 Tags", "Lookup MusicBrainz", "Enrich Data with AI"):
                 self.assertIn(label, page, url)
 
     def test_dashboard_uses_import_data_and_view_completeness(self):

@@ -2,12 +2,12 @@
 {% block title %}Lookup &amp; Enrich{% endblock %}
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:explore' %}">Explore</a><span>/</span>Lookup &amp; Enrich</div>
-<section class="page-heading"><div><span class="eyebrow">LOOKUP &amp; ENRICH / MUSICBRAINZ</span><h1>Lookup Details Online</h1><p class="subheading">Adds genres, country, formation year, line-ups and instruments, studios, producers, engineers, artwork credits, discographies and ratings from <a class="link-button" href="https://musicbrainz.org" rel="noreferrer" target="_blank">MusicBrainz</a>. Your MP3 tags are never changed.</p></div>
+<section class="page-heading"><div><span class="eyebrow">LOOKUP &amp; ENRICH / MUSICBRAINZ</span><h1>Lookup MusicBrainz</h1><p class="subheading">Adds genres, country, formation year, line-ups and instruments, studios, producers, engineers, artwork credits, discographies and ratings from <a class="link-button" href="https://musicbrainz.org" rel="noreferrer" target="_blank">MusicBrainz</a>. Your MP3 tags are never changed.</p></div>
   <div class="heading-actions">
     {% if running %}
       <form method="post" action="{% url 'library:enrichment-stop' %}">{% csrf_token %}<input type="hidden" name="job" value="{{ running.kind }}"><button class="button button-light" type="submit">Stop {{ running.label }}</button></form>
     {% else %}
-      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="globe" %}Lookup Details Online</button></form>
+      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Lookup MusicBrainz{% include "library/_service_logo.html" with service="musicbrainz" %}</button></form>
       <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again, even ones already matched">Redo for all artists</button></form>
     {% endif %}
   </div>
@@ -32,9 +32,9 @@
 <p class="security-note">MusicBrainz allows about one request a second, so a first run takes roughly 3–5 seconds per album. Answers are cached in <code>db/musicbrainz_cache</code>, so later runs are quick. From a terminal: <code>python manage.py enrich_library</code>.</p>
 
 <section class="genre-section metal-lookup" aria-label="Metal Archives">
-  <div class="section-heading"><div><span class="eyebrow">METAL-ARCHIVES.COM · COUNTRY · FORMED · GENRE · LABEL · YEAR · COVER</span><h2>Lookup on Metal Archives</h2></div>
+  <div class="section-heading"><div><span class="eyebrow">METAL-ARCHIVES.COM · COUNTRY · FORMED · GENRE · LABEL · YEAR · COVER</span><h2>Lookup MetalArchives{% include "library/_service_logo.html" with service="metal-archives" %}</h2></div>
     {% if not running %}<div class="heading-actions">
-      <form method="post" action="{% url 'library:metal-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="globe" %}Lookup on Metal Archives</button></form>
+      <form method="post" action="{% url 'library:metal-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Lookup MetalArchives{% include "library/_service_logo.html" with service="metal-archives" %}</button></form>
       <form method="post" action="{% url 'library:metal-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again, even ones already matched">Redo for all artists</button></form>
     </div>{% endif %}
   </div>
@@ -45,9 +45,9 @@
 </section>
 
 <section class="genre-section discogs-lookup" aria-label="Discogs">
-  <div class="section-heading"><div><span class="eyebrow">DISCOGS.COM · PRODUCERS · ENGINEERS · STUDIO · ARTWORK · COMPOSERS · YEAR · LABEL</span><h2>Lookup on Discogs</h2></div>
+  <div class="section-heading"><div><span class="eyebrow">DISCOGS.COM · PRODUCERS · ENGINEERS · STUDIO · ARTWORK · COMPOSERS · YEAR · LABEL</span><h2>Lookup Discogs{% include "library/_service_logo.html" with service="discogs" %}</h2></div>
     {% if not running %}<div class="heading-actions">
-      <form method="post" action="{% url 'library:discogs-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="globe" %}Lookup on Discogs</button></form>
+      <form method="post" action="{% url 'library:discogs-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Lookup Discogs{% include "library/_service_logo.html" with service="discogs" %}</button></form>
       <form method="post" action="{% url 'library:discogs-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every album up again, even ones already matched">Redo for all albums</button></form>
     </div>{% endif %}
   </div>

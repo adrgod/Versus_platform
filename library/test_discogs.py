@@ -122,9 +122,45 @@ class PageTests(TestCase):
         from django.urls import reverse
         album = Album.objects.get()
         page = self.client.get(reverse("library:album-detail", args=(album.pk,)))
-        self.assertContains(page, "Lookup on Discogs")
-        self.assertContains(self.client.get(reverse("library:enrichment")), "Lookup on Discogs")
+        self.assertContains(page, "Lookup Discogs")
+        self.assertContains(self.client.get(reverse("library:enrichment")), "Lookup Discogs")
         from unittest import mock
         with mock.patch("library.services.discogs.configured_token", return_value=""):
             reply = self.client.post(reverse("library:discogs-start"), {"album_id": album.pk}, follow=True)
         self.assertContains(reply, "access token")
+
+
+class FlagAndMatchedOnTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        import_records([record()])
+        self.client.force_login(get_user_model().objects.create_user("tester2", password="x"))
+        self.album = Album.objects.get()
+
+    def test_flag_codes(self):
+        from .services.flags import flag_code
+        self.assertEqual([flag_code(c) for c in ("Hungary", "Scotland", "United States", "[Worldwide]", "")],
+                         ["hu", "gb-sct", "us", None, None])
+
+    def test_three_buttons_with_logos_and_matched_on_links(self):
+        from django.urls import reverse
+        from .models import AlbumProfile, MetalArchivesAlbum
+        AlbumProfile.objects.create(album=self.album, status=EnrichmentStatus.MATCHED, external_id="abc-123")
+        MetalArchivesAlbum.objects.create(album=self.album, status=EnrichmentStatus.MATCHED, url="https://www.metal-archives.com/albums/X/Y/1")
+        DiscogsAlbum.objects.create(album=self.album, status=EnrichmentStatus.NOT_FOUND)
+        page = self.client.get(reverse("library:album-detail", args=(self.album.pk,)))
+        for name in ("Lookup MusicBrainz", "Lookup MetalArchives", "Lookup Discogs"):
+            self.assertContains(page, name)
+        self.assertContains(page, 'class="service-logo"', count=3)
+        self.assertContains(page, "Matched on")
+        self.assertContains(page, "https://musicbrainz.org/release-group/abc-123")
+        self.assertContains(page, "https://www.metal-archives.com/albums/X/Y/1")
+        self.assertContains(page, "Searched, no match on Discogs")
+
+    def test_country_shows_a_flag(self):
+        from django.urls import reverse
+        artist = self.album.artist
+        artist.resolved_country = "Hungary"
+        artist.save()
+        page = self.client.get(reverse("library:artist-detail", args=(artist.pk,)))
+        self.assertContains(page, "flagcdn.com/24x18/hu.png")

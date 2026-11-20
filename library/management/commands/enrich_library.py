@@ -7,7 +7,7 @@ from library.services.musicbrainz import MusicBrainzClient
 
 class Command(BaseCommand):
     help = (
-        "Lookup Details Online: look artists and albums up on MusicBrainz and store genres, country, formation year, "
+        "Lookup MusicBrainz: look artists and albums up on MusicBrainz and store genres, country, formation year, "
         "line-up, studios, credits, discography and ratings. Tags read from the files are never changed."
     )
 

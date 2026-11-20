@@ -161,7 +161,7 @@ def artists_to_enrich(refresh=False, artist_ids=None):
 
 
 def enrich_library(client=None, *, refresh=False, artist_ids=None, album_ids=None, progress=None, should_stop=None):
-    """Lookup Details Online for the library, some artists, or only some albums.
+    """Lookup MusicBrainz for the library, some artists, or only some albums.
 
     With ``album_ids`` each album's artist is matched again, but only those albums are looked up.
     """

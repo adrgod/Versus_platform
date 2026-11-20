@@ -1,7 +1,7 @@
-"""Runs Lookup Details Online and Enrich Data with AI in a background thread.
+"""Runs Lookup MusicBrainz and Enrich Data with AI in a background thread.
 
 Both kinds of job share one lock (both write to the same SQLite file): "musicbrainz"
-(Lookup Details Online, services.enrichment) and "notes" (Enrich Data with AI,
+(Lookup MusicBrainz, services.enrichment) and "notes" (Enrich Data with AI,
 services.insights: liner notes, lyrics, extraction by the local model).
 """
 import threading
@@ -32,11 +32,11 @@ class BackgroundJob:
 
 # The names used for these actions everywhere in the app.
 JOB_LABELS = {
-    "musicbrainz": "Lookup Details Online",
+    "musicbrainz": "Lookup MusicBrainz",
     "notes": "Enrich Data with AI",
     "fill": "Fill in Missing Data",
-    "metal": "Lookup on Metal Archives",
-    "discogs": "Lookup on Discogs",
+    "metal": "Lookup MetalArchives",
+    "discogs": "Lookup Discogs",
 }
 RUNNERS = {
     "musicbrainz": (enrich_library, EnrichmentStats),

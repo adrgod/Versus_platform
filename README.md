@@ -10,9 +10,9 @@ The same four names are used on every page, in messages and in the commands belo
 | **Import Data** | Scans the source folder and brings new music into the catalogue (reads every file's MP3 tags). | Overview |
 | **Edit Tags** | Change tags by hand: album tags plus a table of every track, or an artist's name, country and formed year. Written to the MP3 files on Save. | Artist and album pages |
 | **Read Local MP3 Tags** | Reads the MP3 tags (and folder/file-name details) of one artist's or album's files again. | Artist and album pages |
-| **Lookup Details Online** | Looks artists and albums up on MusicBrainz and fetches missing album covers from the Cover Art Archive. | Lookup & Enrich page, artist and album pages |
-| **Lookup on Metal Archives** | Reads metal-archives.com's public pages (it has no API; one request every 2 s, cached): country, formation year, genre, label, release year and cover. Only fills gaps: tags and MusicBrainz win, existing covers are kept. If the site answers 403 (it sits behind Cloudflare) the run stops and says so. | Lookup & Enrich page, artist and album pages |
-| **Lookup on Discogs** | Official Discogs API: producer, engineer, studio, artwork and composer credits, plus year and label. Needs a free personal token (discogs.com/settings/developers) in the `DISCOGS_TOKEN` environment variable or `enrichment.discogs_token` in `config.json` (don't commit it). Fills only what tags and MusicBrainz left empty. | Lookup & Enrich page, artist and album pages |
+| **Lookup MusicBrainz** | Looks artists and albums up on MusicBrainz and fetches missing album covers from the Cover Art Archive. | Lookup & Enrich page, artist and album pages |
+| **Lookup MetalArchives** | Reads metal-archives.com's public pages (it has no API; one request every 2 s, cached): country, formation year, genre, label, release year and cover. Only fills gaps: tags and MusicBrainz win, existing covers are kept. If the site answers 403 (it sits behind Cloudflare) the run stops and says so. | Lookup & Enrich page, artist and album pages |
+| **Lookup Discogs** | Official Discogs API: producer, engineer, studio, artwork and composer credits, plus year and label. Needs a free personal token (discogs.com/settings/developers) in the `DISCOGS_TOKEN` environment variable or `enrichment.discogs_token` in `config.json` (don't commit it). Fills only what tags and MusicBrainz left empty. | Lookup & Enrich page, artist and album pages |
 | **Enrich Data with AI** | Reads .txt/.nfo/.pdf notes and lyrics, then lets a local AI model extract facts. | Lookup & Enrich page, artist and album pages |
 
 A batch is named after the closest `YYYYMMDD` folder above the files (e.g. "Batch 13 Oct 2026"), whatever
@@ -24,9 +24,9 @@ When changed tags turn an album or artist into a new catalogue entry (name, year
 everything the old entry had is carried over to the new one: online details, AI enrichment, liner notes,
 lyrics, cover, batch and first-loaded date.
 
-# Lookup Details Online (MusicBrainz)
+# Lookup MusicBrainz (MusicBrainz)
 
-`python manage.py enrich_library` (or **Lookup Details Online** on the **Explore → Lookup & Enrich** page, or on an artist or album page) looks artists and albums up on
+`python manage.py enrich_library` (or **Lookup MusicBrainz** on the **Explore → Lookup & Enrich** page, or on an artist or album page) looks artists and albums up on
 [MusicBrainz](https://musicbrainz.org): free, no API key. Per artist it stores genres, country, formation
 year, line-up with instruments and years, discography (studio albums/EPs with release dates) and rating. Per
 album: genres, first release date, release type, rating, studios, producers, engineers, artwork credits,

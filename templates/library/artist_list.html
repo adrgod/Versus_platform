@@ -1,4 +1,5 @@
 {% extends "library/base.html" %}
+{% load library_extras %}
 {% block title %}Artists{% endblock %}
 {% block content %}
 <section class="page-heading"><div><span class="eyebrow">CATALOG / INDEX</span><h1>Artists</h1><p class="subheading">{{ total }} matching names</p></div>
@@ -6,6 +7,6 @@
 </section>
 <div class="filter-bar">{% for facet in facets %}<label class="filter-field"><span>{{ facet.label }}</span><select name="{{ facet.key }}" form="artist-filters" onchange="this.form.submit()"><option value="">All</option>{% for option in facet.options %}<option value="{{ option.value }}"{% if option.value == facet.selected %} selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>{% endfor %}{% if filtered %}<a class="link-button" href="{% url 'library:artist-list' %}{% if search %}?q={{ search|urlencode }}{% endif %}">Clear filters</a>{% endif %}</div>
 <div class="table-wrap"><table class="data-table"><thead><tr><th>ARTIST</th><th>COUNTRY</th><th>MAIN GENRE</th><th>ALBUMS</th><th>TRACKS</th><th></th></tr></thead><tbody>
-{% for artist in artists %}<tr><td><a class="table-primary" href="{% url 'library:artist-detail' artist.artist_id %}">{{ artist.artist_name|default:"Unknown artist" }}</a></td><td>{{ artist.country|default:"—" }}</td><td>{{ artist.main_genre|default:"—" }}</td><td>{{ artist.album_count }}</td><td>{{ artist.track_count }}</td><td class="row-arrow">↗</td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">No matching artists.</td></tr>{% endfor %}
+{% for artist in artists %}<tr><td><a class="table-primary" href="{% url 'library:artist-detail' artist.artist_id %}">{{ artist.artist_name|default:"Unknown artist" }}</a></td><td>{{ artist.country|flag }}{{ artist.country|default:"—" }}</td><td>{{ artist.main_genre|default:"—" }}</td><td>{{ artist.album_count }}</td><td>{{ artist.track_count }}</td><td class="row-arrow">↗</td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">No matching artists.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endblock %}

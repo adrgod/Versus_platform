@@ -435,7 +435,7 @@ def artist_detail(request, artist_id):
 		"country": country,
 		"country_url": facet_url("country", country) if country else None,
 		"formed": artist.resolved_formed_year,
-		"metal_url": _metal_url(MetalArchivesArtist, artist=artist),
+		"matched_on": _matched_on(artist=artist),
 		"job": job,
 		"job_here": _job_is_about(job, artist_id=artist.pk),
 		"importing": is_importing(),
@@ -545,8 +545,7 @@ def album_detail(request, album_id):
 		"lyric_themes": chips.get(FacetKind.LYRIC_THEME, []),
 		"documents": AlbumDocument.objects.filter(album_id=album_id).order_by("file_path"),
 		"lyric_tracks": lyric_tracks,
-		"metal_url": _metal_url(MetalArchivesAlbum, album_id=album_id),
-		"discogs_url": _metal_url(DiscogsAlbum, album_id=album_id),
+		"matched_on": _matched_on(album=album),
 		"job": job,
 		"job_here": _job_is_about(job, artist_id=album.artist_id, album_id=album_id),
 		"importing": is_importing(),
@@ -1218,29 +1217,52 @@ def _redirect_to_scope(album_id="", artist_id=""):
 @login_required
 @require_POST
 def enrichment_start(request):
-	"""Lookup Details Online for the library, one artist or one album."""
+	"""Lookup MusicBrainz for the library, one artist or one album."""
 	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
 	album_ids = [int(album_id)] if album_id.isdigit() else None
 	artist_ids = [int(artist_id)] if artist_id.isdigit() and not album_ids else None
 	if enrichment_service.start_enrichment(
 		refresh=request.POST.get("refresh") == "1", artist_ids=artist_ids, album_ids=album_ids
 	):
-		messages.success(request, "Lookup Details Online started.")
+		messages.success(request, "Lookup MusicBrainz started.")
 	else:
 		_job_busy(request)
 	return _redirect_to_scope(album_id, artist_id)
 
 
-def _metal_url(model, **owner):
-	"""The Metal Archives page this artist or album was matched to, or "" when not matched."""
-	entry = model.objects.filter(status=EnrichmentStatus.MATCHED, **owner).first()
-	return entry.url if entry else ""
+def _matched_on(*, artist=None, album=None):
+	"""Where this artist or album was already looked up online: {"found": [{"name", "url"}], "missed": [name]}.
+
+	Found sources are shown as links to the page they matched; sources that were searched
+	without a match are only named.
+	"""
+	found, missed = [], []
+
+	def note(name, entry, url=None):
+		if entry is None:
+			return
+		url = entry.url if url is None else url
+		if entry.status == EnrichmentStatus.MATCHED and url:
+			found.append({"name": name, "url": url})
+		elif entry.status == EnrichmentStatus.NOT_FOUND:
+			missed.append(name)
+
+	if album is not None:
+		profile = AlbumProfile.objects.filter(album=album).first()
+		note("MusicBrainz", profile, f"https://musicbrainz.org/release-group/{profile.external_id}" if profile and profile.external_id else "")
+		note("Metal Archives", MetalArchivesAlbum.objects.filter(album=album).first())
+		note("Discogs", DiscogsAlbum.objects.filter(album=album).first())
+	else:
+		profile = ArtistProfile.objects.filter(artist=artist).first()
+		note("MusicBrainz", profile, f"https://musicbrainz.org/artist/{profile.external_id}" if profile and profile.external_id else "")
+		note("Metal Archives", MetalArchivesArtist.objects.filter(artist=artist).first())
+	return {"found": found, "missed": missed} if found or missed else None
 
 
 @login_required
 @require_POST
 def metal_start(request):
-	"""Lookup on Metal Archives for all artists, one artist or one album."""
+	"""Lookup MetalArchives for all artists, one artist or one album."""
 	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
 	options = {"refresh": request.POST.get("refresh") == "1"}
 	if album_id.isdigit():
@@ -1248,7 +1270,7 @@ def metal_start(request):
 	elif artist_id.isdigit():
 		options["artist_ids"] = [int(artist_id)]
 	if enrichment_service.start_job("metal", **options):
-		messages.success(request, "Lookup on Metal Archives started.")
+		messages.success(request, "Lookup MetalArchives started.")
 	else:
 		_job_busy(request)
 	return _redirect_to_scope(album_id, artist_id)
@@ -1257,7 +1279,7 @@ def metal_start(request):
 @login_required
 @require_POST
 def discogs_start(request):
-	"""Lookup on Discogs for all albums, one artist's albums or one album."""
+	"""Lookup Discogs for all albums, one artist's albums or one album."""
 	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
 	options = {"refresh": request.POST.get("refresh") == "1"}
 	if album_id.isdigit():
@@ -1265,9 +1287,9 @@ def discogs_start(request):
 	elif artist_id.isdigit():
 		options["artist_ids"] = [int(artist_id)]
 	if not discogs_service.configured_token():
-		messages.error(request, 'Lookup on Discogs needs a free access token: set the DISCOGS_TOKEN environment variable (or "discogs_token" under "enrichment" in config.json; create one at discogs.com/settings/developers).')
+		messages.error(request, 'Lookup Discogs needs a free access token: set the DISCOGS_TOKEN environment variable (or "discogs_token" under "enrichment" in config.json; create one at discogs.com/settings/developers).')
 	elif enrichment_service.start_job("discogs", **options):
-		messages.success(request, "Lookup on Discogs started.")
+		messages.success(request, "Lookup Discogs started.")
 	else:
 		_job_busy(request)
 	return _redirect_to_scope(album_id, artist_id)
@@ -1365,9 +1387,9 @@ def set_external_id(request, kind, object_id):
 		messages.error(request, str(error))
 		return redirect("library:enrichment")
 	if enrichment_service.start_enrichment(artist_ids=[artist.pk]):
-		messages.success(request, f"MusicBrainz ID saved; Lookup Details Online started for {artist.artist_name}.")
+		messages.success(request, f"MusicBrainz ID saved; Lookup MusicBrainz started for {artist.artist_name}.")
 	else:
-		messages.warning(request, "MusicBrainz ID saved. It is used the next time Lookup Details Online runs (another job is running now).")
+		messages.warning(request, "MusicBrainz ID saved. It is used the next time Lookup MusicBrainz runs (another job is running now).")
 	return redirect("library:enrichment")
 
 

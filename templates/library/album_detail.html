@@ -1,4 +1,5 @@
 {% extends "library/base.html" %}
+{% load library_extras %}
 {% block title %}{{ album.album_name }}{% endblock %}
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:album-list' %}">Albums</a><span>/</span><a href="{% url 'library:artist-detail' album.artist_id %}">{{ album.artist_name }}</a><span>/</span>{{ album.album_name }}</div>
@@ -13,7 +14,7 @@
 <section class="credits-section details-section" aria-label="Album details"><div class="section-heading"><div><span class="eyebrow">CATALOG / TAGS</span><h2>Details</h2></div></div>
   <div class="credit-grid detail-grid">
     <div class="credit-group{% if not label %} is-empty{% endif %}"><span class="eyebrow">LABEL</span><p class="detail-value">{% if label_url %}<a href="{{ label_url }}">{{ label }}</a>{% endif %}</p>{% if label_source %}<small class="data-source">{{ label_source }}</small>{% endif %}</div>
-    <div class="credit-group{% if not country %} is-empty{% endif %}"><span class="eyebrow">COUNTRY</span><p class="detail-value">{% if country_url %}<a href="{{ country_url }}">{{ country }}</a>{% endif %}</p>{% if country_source %}<small class="data-source">{{ country_source }}</small>{% endif %}</div>
+    <div class="credit-group{% if not country %} is-empty{% endif %}"><span class="eyebrow">COUNTRY</span><p class="detail-value">{% if country_url %}<a href="{{ country_url }}">{{ country|flag }}{{ country }}</a>{% endif %}</p>{% if country_source %}<small class="data-source">{{ country_source }}</small>{% endif %}</div>
     <div class="credit-group{% if not year %} is-empty{% endif %}"><span class="eyebrow">RELEASE YEAR</span><p class="detail-value">{% if year %}{% if decade_url %}<a href="{{ decade_url }}">{{ year }}</a>{% else %}{{ year }}{% endif %}{% endif %}</p>{% if year_source %}<small class="data-source">{{ year_source }}</small>{% endif %}</div>
     <div class="credit-group{% if not main_genre %} is-empty{% endif %}"><span class="eyebrow">MAIN GENRE</span><p class="detail-value">{% if main_genre %}<a href="{{ main_genre_url }}">{{ main_genre }}</a>{% endif %}</p>{% if genre_source %}<small class="data-source">{{ genre_source }}</small>{% endif %}{% if other_genres %}<small class="detail-more">Also: {{ other_genres|join:", " }}</small>{% endif %}</div>
   </div>

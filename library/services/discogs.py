@@ -1,4 +1,4 @@
-"""Lookup on Discogs: credits (producers, engineers, studios, artwork, composers), year and label.
+"""Lookup Discogs: credits (producers, engineers, studios, artwork, composers), year and label.
 
 Uses the official Discogs API (https://www.discogs.com/developers). It needs a free personal
 access token: ``"discogs_token"`` under ``"enrichment"`` in config.json, or the DISCOGS_TOKEN
@@ -164,7 +164,7 @@ def albums_to_look_up(refresh=False, album_ids=None, artist_ids=None):
 
 
 def run(*, client=None, refresh=False, artist_ids=None, album_ids=None, progress=None, should_stop=None):
-    """Lookup on Discogs for the library, some artists, or some albums."""
+    """Lookup Discogs for the library, some artists, or some albums."""
     client = client or DiscogsClient()
     if not client.token:
         raise DiscogsError(

@@ -1,6 +1,6 @@
 {% comment %}
 The metadata actions for one artist or album, named the same everywhere:
-Edit Tags · Read Local MP3 Tags · Lookup Details Online · Lookup on Metal Archives · Lookup on Discogs · Enrich Data with AI.
+Edit Tags · Read Local MP3 Tags · Lookup MusicBrainz · Lookup MetalArchives · Lookup Discogs · Enrich Data with AI.
 Include with: scope="album_id"|"artist_id", object_id, noun ("album"|"artist").
 {% endcomment %}
 <div class="metadata-actions" role="group" aria-label="Update this {{ noun }}">
@@ -9,20 +9,19 @@ Include with: scope="album_id"|"artist_id", object_id, noun ("album"|"artist").
     <button class="button button-light" type="submit" {% if importing %}disabled title="Import Data is running"{% else %}title="Read this {{ noun }}'s MP3 files again and update the catalogue"{% endif %}>{% include "library/_icon.html" with name="tag" %}Read Local MP3 Tags</button>
   </form>
   <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}"><input type="hidden" name="refresh" value="1">
-    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on MusicBrainz"{% endif %}>{% include "library/_icon.html" with name="globe" %}Lookup Details Online</button>
+    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on MusicBrainz"{% endif %}>Lookup MusicBrainz{% include "library/_service_logo.html" with service="musicbrainz" %}</button>
   </form>
   <form method="post" action="{% url 'library:metal-start' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}"><input type="hidden" name="refresh" value="1">
-    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on metal-archives.com: country, formation year, genre, label, release year and cover"{% endif %}>{% include "library/_icon.html" with name="globe" %}Lookup on Metal Archives</button>
+    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on metal-archives.com: country, formation year, genre, label, release year and cover"{% endif %}>Lookup MetalArchives{% include "library/_service_logo.html" with service="metal-archives" %}</button>
   </form>
   <form method="post" action="{% url 'library:discogs-start' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}"><input type="hidden" name="refresh" value="1">
-    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on discogs.com: producers, engineers, studio, artwork and composer credits, year and label"{% endif %}>{% include "library/_icon.html" with name="globe" %}Lookup on Discogs</button>
+    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on discogs.com: producers, engineers, studio, artwork and composer credits, year and label"{% endif %}>Lookup Discogs{% include "library/_service_logo.html" with service="discogs" %}</button>
   </form>
   <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}"><input type="hidden" name="refresh" value="1">
     <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Read liner notes, PDFs and lyrics, then let the local AI model extract facts"{% endif %}>{% include "library/_icon.html" with name="sparkles" %}Enrich Data with AI</button>
   </form>
 </div>
-{% if discogs_url %}<p class="quiet-note">Matched on <a class="quiet-link" href="{{ discogs_url }}" rel="noreferrer" target="_blank">Discogs <span>↗</span></a></p>{% endif %}
-{% if metal_url %}<p class="quiet-note">Matched on <a class="quiet-link" href="{{ metal_url }}" rel="noreferrer" target="_blank">Metal Archives <span>↗</span></a></p>{% endif %}
+{% if matched_on %}<p class="quiet-note">{% if matched_on.found %}Matched on {% for source in matched_on.found %}<a class="quiet-link" href="{{ source.url }}" rel="noreferrer" target="_blank">{{ source.name }} <span>↗</span></a>{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}{% if matched_on.missed %}{% if matched_on.found %} · {% endif %}<span class="quiet-miss">Searched, no match on {{ matched_on.missed|join:", " }}</span>{% endif %}</p>{% endif %}
 {% if job and job.running %}<div class="job-strip"{% if job_here %} data-poll="3000"{% endif %} role="status">
   <span class="status-dot status-scanning"></span>
   <span><strong>{{ job.label }}</strong> is running{% if job.stats.current %} · {{ job.stats.current }}{% endif %}</span>

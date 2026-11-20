@@ -2,7 +2,7 @@
 
 Artist name, album name, year and publisher are part of an entry's identity, so
 fixing one of them in the MP3 tags makes the importer create a *new* artist,
-album and track row. Everything the old rows had (Lookup Details Online results,
+album and track row. Everything the old rows had (Lookup MusicBrainz results,
 Enrich Data with AI results, liner notes, lyrics, cover, batch, first-loaded date)
 is carried over to the new rows, the old track rows are removed, and old albums
 or artists left without tracks are pruned.

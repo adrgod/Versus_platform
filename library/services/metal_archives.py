@@ -1,4 +1,4 @@
-"""Lookup on Metal Archives (https://www.metal-archives.com): country, formation year, genre, label, release year and cover.
+"""Lookup MetalArchives (https://www.metal-archives.com): country, formation year, genre, label, release year and cover.
 
 Metal Archives has no official API. This reads the same public pages and search endpoints the
 site's own pages use, so it is deliberately gentle: it only runs when asked (a button, never in
@@ -254,7 +254,7 @@ def artists_to_look_up(refresh=False, artist_ids=None):
 
 
 def run(*, client=None, refresh=False, artist_ids=None, album_ids=None, progress=None, should_stop=None):
-    """Lookup on Metal Archives for the library, some artists, or only some albums."""
+    """Lookup MetalArchives for the library, some artists, or only some albums."""
     client = client or MetalArchivesClient()
     if album_ids:
         artist_ids = sorted(set(Album.objects.filter(pk__in=album_ids).values_list("artist_id", flat=True)))

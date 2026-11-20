@@ -1,4 +1,5 @@
 {% extends "library/base.html" %}
+{% load library_extras %}
 {% load static %}
 {% block title %}Explore{% endblock %}
 {% block content %}
@@ -6,7 +7,7 @@
 <section class="page-heading"><div><span class="eyebrow">CATALOG / TAG EXPLORER</span><h1>Explore</h1><p class="subheading">{% if selected %}{{ artists|length }} artist{{ artists|length|pluralize }} · {{ album_total }} album{{ album_total|pluralize }} in this selection.{% else %}Pick tags to narrow the library. Within a group any value matches; across groups all must match.{% endif %}</p></div>
   <div class="heading-actions"><a class="button button-light" href="{% url 'library:decade-index' %}">Albums by decade</a><a class="button button-light" href="{% url 'library:enrichment' %}">Lookup &amp; Enrich</a></div>
 </section>
-{% if not has_profiles %}<div class="preview-warning"><strong>Only file tags so far</strong><span>Genres, labels and years come from your MP3 tags. Run <a class="link-button" href="{% url 'library:enrichment' %}">Lookup Details Online</a> to add countries, line-ups, instruments, studios, engineers, artwork credits and ratings.</span></div>{% endif %}
+{% if not has_profiles %}<div class="preview-warning"><strong>Only file tags so far</strong><span>Genres, labels and years come from your MP3 tags. Run <a class="link-button" href="{% url 'library:enrichment' %}">Lookup MusicBrainz</a> to add countries, line-ups, instruments, studios, engineers, artwork credits and ratings.</span></div>{% endif %}
 
 <div class="explore-layout">
   <aside class="facet-panel" aria-label="Filter by tag">
@@ -33,7 +34,7 @@
 
     <section class="explore-section">
       <div class="section-heading"><div><span class="eyebrow">WHO IS IN IT</span><h2>Artists <span class="count-badge">{{ artists|length }}</span></h2></div></div>
-      <div class="artist-chip-list">{% for artist in artists %}<a class="artist-chip artist-card" href="{% url 'library:artist-detail' artist.id %}"><span class="artist-card-copy"><strong>{{ artist.name }}</strong><span>{% if artist.country %}{{ artist.country }}{% endif %}{% if artist.country and artist.formed %} · {% endif %}{% if artist.formed %}est. {{ artist.formed }}{% endif %}{% if artist.country or artist.formed %} · {% endif %}{{ artist.album_count }} album{{ artist.album_count|pluralize }}</span></span><b>↗</b></a>{% empty %}<div class="empty-state"><h3>Nobody matches every tag</h3><p>Remove a tag to widen the selection.</p></div>{% endfor %}</div>
+      <div class="artist-chip-list">{% for artist in artists %}<a class="artist-chip artist-card" href="{% url 'library:artist-detail' artist.id %}"><span class="artist-card-copy"><strong>{{ artist.name }}</strong><span>{% if artist.country %}{{ artist.country|flag }}{{ artist.country }}{% endif %}{% if artist.country and artist.formed %} · {% endif %}{% if artist.formed %}est. {{ artist.formed }}{% endif %}{% if artist.country or artist.formed %} · {% endif %}{{ artist.album_count }} album{{ artist.album_count|pluralize }}</span></span><b>↗</b></a>{% empty %}<div class="empty-state"><h3>Nobody matches every tag</h3><p>Remove a tag to widen the selection.</p></div>{% endfor %}</div>
     </section>
 
     <section class="explore-section">
