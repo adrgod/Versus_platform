@@ -6,9 +6,10 @@ music_data.db
 db.sqlite3
 db/metadata_backups/
 .venv
-/source-test/*
+source-test/*
 .DS_Store
 db/tag_write_logs/
 db/musicbrainz_cache/
 db/lrclib_cache/
 test-data
+.claude
