@@ -21,3 +21,12 @@ def flag(country):
         'width="20" height="15" alt="" loading="lazy" onerror="this.remove()"> ',
         code, code,
     )
+
+
+@register.filter
+def get_item(mapping, key):
+    """mapping[key], or 0 when missing (used for the user's star ratings)."""
+    try:
+        return mapping.get(key, 0)
+    except AttributeError:
+        return 0

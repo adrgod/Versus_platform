@@ -303,3 +303,11 @@ Everything else can wait.
 
 The main idea:
 MUSIC FILES → METADATA → SQLITE → MAGAZINE PDFs → REVIEWS/INTERVIEWS → ENRICHMENT → DJANGO → SEARCH / ANALYSIS / PLAYER
+## Per-user settings
+
+Everything below is stored on the server against the Django login, so it follows you to any browser or PC after `manage.py migrate`:
+
+- display settings (dark/light/system, highlight colour, grid size, corners, motion), applied on the first paint
+- equalizer (5 bands) and volume
+- played history (a play counts after 30 s, or half of a shorter track), listed under **History**
+- star ratings (1-5) of tracks and albums on the album page and in History; click the same star again to clear

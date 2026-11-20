@@ -26,6 +26,7 @@ from . import enrichment_service, queries, repository
 from .models import (
 	Album, AlbumCredit, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, ArtistFacet, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, DiscogsAlbum, LibraryState, MetalArchivesAlbum, MetalArchivesArtist, Track,
 )
+from .models import AlbumRating, TrackRating
 from .scan_service import is_importing, read_local_tags, start_scan
 from .services.files_scanner import (
 	calculate_confidence_for_track,
@@ -516,8 +517,13 @@ def album_detail(request, album_id):
 		for track in tracks
 		if track.track_id in lyrics_by_track and (lyrics_by_track[track.track_id].text or lyrics_by_track[track.track_id].instrumental)
 	]
+	track_ratings = dict(TrackRating.objects.filter(
+		user=request.user, track__album_id=album_id).values_list("track_id", "stars"))
+	album_rating = AlbumRating.objects.filter(user=request.user, album_id=album_id).values_list("stars", flat=True).first() or 0
 	return render(request, "library/album_detail.html", {
 		"album": album,
+		"track_ratings": track_ratings,
+		"album_rating": album_rating,
 		"tracks": tracks,
 		"multi_disc": multi_disc,
 		"player_tracks": playable_tracks,

@@ -332,3 +332,43 @@ class AlbumCredit(models.Model):
     source = models.CharField(max_length=20)
     evidence = models.CharField(max_length=300, blank=True)  # the quote or tag it was read from
     count = models.IntegerField(default=0)
+
+
+# -- per user: preferences, play history, ratings ------------------------------------
+
+class UserPreference(models.Model):
+    """What one logged-in user chose, so it follows them to every browser and PC."""
+    user = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="library_preference")
+    display = models.JSONField(default=dict, blank=True)  # theme, accent, grid, corners, motion
+    eq = models.JSONField(default=dict, blank=True)  # {"60": 0, "250": 3, ...} in dB
+    volume = models.FloatField(null=True, blank=True)  # 0..1
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class PlayEvent(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="library_plays")
+    track = models.ForeignKey(Track, on_delete=models.CASCADE, related_name="plays")
+    played_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-played_at", "-id"]
+
+
+class TrackRating(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="library_track_ratings")
+    track = models.ForeignKey(Track, on_delete=models.CASCADE, related_name="ratings")
+    stars = models.PositiveSmallIntegerField()  # 1..5
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "track"], name="one_rating_per_user_track")]
+
+
+class AlbumRating(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="library_album_ratings")
+    album = models.ForeignKey(Album, on_delete=models.CASCADE, related_name="ratings")
+    stars = models.PositiveSmallIntegerField()  # 1..5
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "album"], name="one_rating_per_user_album")]

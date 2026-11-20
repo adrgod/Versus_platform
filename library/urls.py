@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import user_data, views
 
 
 app_name = "library"
@@ -41,5 +41,9 @@ urlpatterns = [
     path("tracks/<int:track_id>/edit/", views.edit_track_tags, name="edit-tags"),
     path("albums/<int:album_id>/edit/", views.album_edit_tags, name="album-edit-tags"),
     path("artists/<int:artist_id>/edit/", views.artist_edit_tags, name="artist-edit-tags"),
+    path("me/preferences/", user_data.preferences, name="preferences"),
+    path("me/played/<int:track_id>/", user_data.record_play, name="record-play"),
+    path("me/rate/<str:kind>/<int:object_id>/", user_data.rate, name="rate"),
+    path("history/", user_data.history, name="history"),
     path("tracks/<int:track_id>/confirm/", views.confirm_tag_edit, name="confirm-tag-edit"),
 ]

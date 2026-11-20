@@ -928,3 +928,9 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .service-logo { width: 1.15em; height: 1.15em; margin-left: 6px; vertical-align: -0.2em; flex: none; }
 .flag { width: 20px; height: 15px; margin-right: 6px; vertical-align: -2px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); object-fit: cover; }
 .quiet-note .quiet-link + .quiet-link { margin-left: 4px; }
+
+/* Star ratings */
+.stars { display: inline-flex; gap: 1px; white-space: nowrap; }
+.star { background: none; border: 0; padding: 0 1px; font-size: 1.05rem; line-height: 1; cursor: pointer; color: var(--muted, #9aa0a6); opacity: .55; }
+.star:hover, .star.is-on { color: var(--accent, #6366f1); opacity: 1; }
+.album-rating { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; }

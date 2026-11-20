@@ -1,0 +1,9 @@
+{% extends "library/base.html" %}
+{% load library_extras %}
+{% block title %}History{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">LIBRARY / HISTORY</span><h1>Played history</h1><p class="subheading">Your last {{ plays|length }} play{{ plays|length|pluralize }}, kept with your login.</p></div></section>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>PLAYED</th><th>TRACK</th><th>ALBUM</th><th>ARTIST</th><th>RATING</th></tr></thead><tbody>
+{% for play in plays %}<tr><td><time datetime="{{ play.played_at|date:'c' }}">{{ play.played_at|date:"j M Y, H:i" }}</time></td><td><strong class="table-primary">{{ play.track.track_title }}</strong></td><td><a href="{% url 'library:album-detail' play.track.album_id %}">{{ play.track.album.album_name }}</a></td><td><a href="{% url 'library:artist-detail' play.track.album.artist_id %}">{{ play.track.album.artist.artist_name }}</a></td><td>{% include "library/_stars.html" with kind="track" object_id=play.track_id value=play.stars %}</td></tr>{% empty %}<tr><td colspan="5" class="empty-cell">Nothing played yet. Press Play on a track and it will show up here.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

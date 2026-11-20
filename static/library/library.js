@@ -15,6 +15,69 @@
   let audioContext;
   let filters = [];
 
+  const EQ_BANDS = [60, 250, 1000, 4000, 12000];
+
+  // Equalizer and volume follow the login: restore what the server has, save every change.
+  const saved = window.versusPrefs;
+  let pushTimer;
+  const pushAudioPrefs = () => {
+    if (!saved) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      const eq = {};
+      document.querySelectorAll("[data-eq]").forEach((control) => { eq[control.dataset.eq] = Number(control.value); });
+      window.versusApi?.("/me/preferences/", { eq, volume: Number(volume.value) });
+    }, 400);
+  };
+  const restoreAudioPrefs = () => {
+    if (!saved) return;
+    document.querySelectorAll("[data-eq]").forEach((control) => {
+      if (saved.eq && saved.eq[control.dataset.eq] !== undefined) control.value = saved.eq[control.dataset.eq];
+    });
+    if (typeof saved.volume === "number") {
+      volume.value = saved.volume;
+      audio.volume = saved.volume;
+    }
+  };
+  restoreAudioPrefs();
+  document.addEventListener("input", (event) => {
+    const control = event.target.closest?.("[data-eq]");
+    if (control) {
+      const index = EQ_BANDS.indexOf(Number(control.dataset.eq));
+      if (filters[index]) filters[index].gain.value = Number(control.value);
+      pushAudioPrefs();
+    } else if (event.target === volume) {
+      pushAudioPrefs();
+    }
+  });
+
+  // A play counts once a track has run for 30 s (or half of a shorter one).
+  let countedFor = "";
+  const trackIdOf = (url) => (String(url).match(/\/tracks\/(\d+)\/audio\//) || [])[1];
+  audio.addEventListener("timeupdate", () => {
+    const id = trackIdOf(audio.src);
+    if (!saved || !id || countedFor === audio.src) return;
+    const needed = Number.isFinite(audio.duration) ? Math.min(30, audio.duration / 2) : 30;
+    if (audio.currentTime >= needed) {
+      countedFor = audio.src;
+      window.versusApi?.(`/me/played/${id}/`, {});
+    }
+  });
+
+  document.addEventListener("click", async (event) => {
+    const star = event.target.closest(".stars [data-star]");
+    if (!star) return;
+    const box = star.closest(".stars");
+    const picked = Number(star.dataset.star);
+    const next = Number(box.dataset.rateValue) === picked ? 0 : picked; // same star again clears
+    const result = await window.versusApi?.(`/me/rate/${box.dataset.rateKind}/${box.dataset.rateId}/`, { stars: next });
+    if (!result) return;
+    box.dataset.rateValue = String(result.stars);
+    box.querySelectorAll("[data-star]").forEach((button) => {
+      button.classList.toggle("is-on", Number(button.dataset.star) <= result.stars);
+    });
+  });
+
   const formatTime = (seconds) => {
     if (!Number.isFinite(seconds)) return "0:00";
     const minutes = Math.floor(seconds / 60);
@@ -39,10 +102,8 @@
       }
       previous.connect(audioContext.destination);
       document.querySelectorAll("[data-eq]").forEach((control) => {
-        control.addEventListener("input", () => {
-          const index = [60, 250, 1000, 4000, 12000].indexOf(Number(control.dataset.eq));
-          if (filters[index]) filters[index].gain.value = Number(control.value);
-        });
+        const index = EQ_BANDS.indexOf(Number(control.dataset.eq));
+        if (filters[index]) filters[index].gain.value = Number(control.value);
       });
     }
     if (audioContext.state === "suspended") await audioContext.resume();

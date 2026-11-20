@@ -9,6 +9,32 @@
     orange: "Orange", rose: "Rose", pink: "Pink", violet: "Violet", graphite: "Graphite",
   };
   const root = document.documentElement;
+
+  // Small JSON helper shared with library.js: POSTs with the CSRF token. Only used when
+  // signed in, i.e. when the server put the user's saved preferences in the page.
+  const csrfToken = () =>
+    document.querySelector("[name=csrfmiddlewaretoken]")?.value ||
+    (document.cookie.match(/(?:^|; )csrftoken=([^;]*)/) || [])[1] || "";
+  window.versusApi = (url, body) =>
+    fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": decodeURIComponent(csrfToken()) },
+      body: JSON.stringify(body),
+    }).then((response) => (response.ok ? response.json() : null)).catch(() => null);
+  window.versusPrefs = (() => {
+    try {
+      return JSON.parse(document.getElementById("user-prefs")?.textContent || "null");
+    } catch {
+      return null;
+    }
+  })();
+  let pushTimer;
+  const pushDisplay = (display) => {
+    if (!window.versusPrefs) return; // not signed in
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => window.versusApi("/me/preferences/", { display }), 400);
+  };
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
   const load = () => {
@@ -66,6 +92,7 @@
     save(settings);
     apply(settings);
     syncControls();
+    pushDisplay(settings);
   };
 
   document.addEventListener("change", (event) => {
