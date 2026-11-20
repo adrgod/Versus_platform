@@ -28,7 +28,7 @@
       d.setAttribute("data-motion", s.motion || "full");
     })();
   </script>
-  <link rel="stylesheet" href="{% static 'library/library.css' %}?v=13">
+  <link rel="stylesheet" href="{% static 'library/library.css' %}?v=14">
 </head>
 <body>
   <div class="app-frame">
@@ -84,6 +84,7 @@
         <a href="{% url 'library:dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Overview</a>
         <a href="{% url 'library:album-list' %}" class="{% if 'album' in request.resolver_match.url_name %}active{% endif %}">Albums</a>
         <a href="{% url 'library:artist-list' %}" class="{% if 'artist' in request.resolver_match.url_name %}active{% endif %}">Artists</a>
+        <a href="{% url 'library:review-list' %}" class="{% if request.resolver_match.url_name == 'review-list' %}active{% endif %}">Reviews</a>
         <a href="{% url 'library:history' %}" class="{% if request.resolver_match.url_name == 'history' %}active{% endif %}">History</a>
         <a href="{% url 'library:batch-index' %}" class="{% if 'batch' in request.resolver_match.url_name %}active{% endif %}">Batches</a>
         <a href="{% url 'library:quality-report' %}" class="{% if request.resolver_match.url_name == 'quality-report' or request.resolver_match.url_name == 'edit-tags' %}active{% endif %}">Tag health</a>
@@ -149,8 +150,9 @@
       <audio id="library-audio" preload="metadata"></audio>
     </section>
   {% endif %}
-  <script src="{% static 'library/settings.js' %}?v=3" defer></script>
+  <script src="{% static 'library/settings.js' %}?v=4" defer></script>
   <script src="{% static 'library/tag_edit.js' %}?v=2" defer></script>
+  <script src="{% static 'library/reviews.js' %}?v=1" defer></script>
   <script src="{% static 'library/library.js' %}?v=5" defer></script>
   <script type="importmap">{"imports":{"three":"{% static 'library/vendor/three.module.js' %}"}}</script>
   <script type="module" src="{% static 'library/data_cloud.js' %}?v=2"></script>

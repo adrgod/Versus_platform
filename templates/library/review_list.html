@@ -1,0 +1,12 @@
+{% extends "library/base.html" %}
+{% block title %}Reviews{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">LIBRARY / REVIEWS</span><h1>Reviews</h1><p class="subheading">{{ reviews|length }} review{{ reviews|length|pluralize }}{% if search %} matching “{{ search }}”{% endif %}. Search the text, album, artist, label or author.</p></div>
+  <form class="search-form" method="get"><input type="search" name="q" value="{{ search }}" placeholder="Search reviews" aria-label="Search reviews"><select name="sort" aria-label="Sort reviews" onchange="this.form.requestSubmit()">{% for key, label in sorts %}<option value="{{ key }}"{% if key == sort %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="button button-dark" type="submit">Search</button></form>
+</section>
+{% for review in reviews %}<article class="review-card">
+  <div class="review-card-head"><h3><a href="{% url 'library:album-detail' review.album_id %}">{{ review.album.album_name }}</a> <span class="muted">by <a href="{% url 'library:artist-detail' review.album.artist_id %}">{{ review.album.artist.artist_name }}</a></span></h3><span class="review-card-score">{{ review.score }}/10</span></div>
+  <p class="review-card-meta">{{ review.author_name }} · written {{ review.written_at|date:"j M Y" }}{% if review.album.resolved_label %} · {{ review.album.resolved_label }}{% endif %}</p>
+  {% if review.excerpt %}<p class="review-card-excerpt">{{ review.excerpt }}</p>{% endif %}
+</article>{% empty %}<div class="empty-state"><h3>{% if search %}No reviews match{% else %}No reviews yet{% endif %}</h3><p>{% if search %}Try another search.{% else %}Open an album and write one under its lookup buttons.{% endif %}</p></div>{% endfor %}
+{% endblock %}

@@ -15,13 +15,17 @@
   const csrfToken = () =>
     document.querySelector("[name=csrfmiddlewaretoken]")?.value ||
     (document.cookie.match(/(?:^|; )csrftoken=([^;]*)/) || [])[1] || "";
-  window.versusApi = (url, body) =>
+  // versusPost -> {ok, status, data}; versusApi -> the data, or null when the request failed.
+  window.versusPost = (url, body) =>
     fetch(url, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", "X-CSRFToken": decodeURIComponent(csrfToken()) },
       body: JSON.stringify(body),
-    }).then((response) => (response.ok ? response.json() : null)).catch(() => null);
+    })
+      .then((response) => response.json().catch(() => null).then((data) => ({ ok: response.ok, status: response.status, data })))
+      .catch(() => ({ ok: false, status: 0, data: null }));
+  window.versusApi = (url, body) => window.versusPost(url, body).then((result) => (result.ok ? result.data : null));
   window.versusPrefs = (() => {
     try {
       return JSON.parse(document.getElementById("user-prefs")?.textContent || "null");

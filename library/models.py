@@ -342,6 +342,7 @@ class UserPreference(models.Model):
     display = models.JSONField(default=dict, blank=True)  # theme, accent, grid, corners, motion
     eq = models.JSONField(default=dict, blank=True)  # {"60": 0, "250": 3, ...} in dB
     volume = models.FloatField(null=True, blank=True)  # 0..1
+    display_name = models.CharField(max_length=100, blank=True, default="")  # shown on reviews
     updated_at = models.DateTimeField(auto_now=True)
 
 
@@ -372,3 +373,18 @@ class AlbumRating(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "album"], name="one_rating_per_user_album")]
+
+
+class Review(models.Model):
+    """One user's written review and 1-10 score of an album."""
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="library_reviews")
+    album = models.ForeignKey(Album, on_delete=models.CASCADE, related_name="reviews")
+    author_name = models.CharField(max_length=100)  # the name shown with the review
+    score = models.PositiveSmallIntegerField()  # 1..10
+    body_html = models.TextField(blank=True)  # sanitized, see library/reviews.py
+    body_text = models.TextField(blank=True)  # the same without formatting, for searching
+    written_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "album"], name="one_review_per_user_album")]

@@ -27,6 +27,7 @@ from .models import (
 	Album, AlbumCredit, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, ArtistFacet, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, DiscogsAlbum, LibraryState, MetalArchivesAlbum, MetalArchivesArtist, Track,
 )
 from .models import AlbumRating, TrackRating
+from .reviews import review_context
 from .scan_service import is_importing, read_local_tags, start_scan
 from .services.files_scanner import (
 	calculate_confidence_for_track,
@@ -521,6 +522,7 @@ def album_detail(request, album_id):
 		user=request.user, track__album_id=album_id).values_list("track_id", "stars"))
 	album_rating = AlbumRating.objects.filter(user=request.user, album_id=album_id).values_list("stars", flat=True).first() or 0
 	return render(request, "library/album_detail.html", {
+		**review_context(request, album, label),
 		"album": album,
 		"track_ratings": track_ratings,
 		"album_rating": album_rating,

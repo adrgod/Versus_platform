@@ -11,6 +11,7 @@
   </div>
 </section>
 {{ player_tracks|json_script:"album-playlist" }}
+{% include "library/_review_box.html" %}
 <section class="credits-section details-section" aria-label="Album details"><div class="section-heading"><div><span class="eyebrow">CATALOG / TAGS</span><h2>Details</h2></div></div>
   <div class="credit-grid detail-grid">
     <div class="credit-group{% if not label %} is-empty{% endif %}"><span class="eyebrow">LABEL</span><p class="detail-value">{% if label_url %}<a href="{{ label_url }}">{{ label }}</a>{% endif %}</p>{% if label_source %}<small class="data-source">{{ label_source }}</small>{% endif %}</div>

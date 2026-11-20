@@ -1,0 +1,35 @@
+<section class="review-section" aria-label="Your review" data-review data-save-url="{% url 'library:review-save' album.album_id %}" data-delete-url="{% url 'library:review-delete' album.album_id %}">
+  {% csrf_token %}
+  <div class="section-heading"><div><span class="eyebrow">YOUR WORDS</span><h2>Review</h2></div>
+    <span class="review-meta" data-review-meta>{% if review %}Written {{ review.written_at|date:"j M Y" }}{% if review.updated_at|date:"Ymd" != review.written_at|date:"Ymd" %} · edited {{ review.updated_at|date:"j M Y" }}{% endif %}{% else %}Not written yet{% endif %}</span></div>
+  <div class="review-fields">
+    <label class="review-author">Reviewer<input type="text" maxlength="100" value="{{ review_author }}" data-review-author placeholder="Name shown with your review" autocomplete="name"></label>
+    <div class="review-score-field"><span id="review-score-label">Score</span>
+      <span class="review-score" role="group" aria-labelledby="review-score-label" data-review-score data-value="{{ review_score }}">{% for n in "1234567890" %}<button type="button" class="review-star{% if forloop.counter <= review_score %} is-on{% endif %}" data-review-star="{{ forloop.counter }}" aria-label="{{ forloop.counter }} out of 10" title="{{ forloop.counter }}/10">★</button>{% endfor %}</span>
+      <output class="review-score-value" data-review-score-value>{% if review_score %}{{ review_score }}/10{% else %}—/10{% endif %}</output></div>
+  </div>
+  <div class="review-editor">
+    <div class="review-toolbar" role="toolbar" aria-label="Text formatting">
+      <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+      <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+      <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline"><u>U</u></button>
+      <button type="button" data-cmd="strikeThrough" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+      <span class="review-toolbar-gap"></span>
+      <button type="button" data-cmd="formatBlock" data-value="&lt;h3&gt;" title="Heading" aria-label="Heading">H</button>
+      <button type="button" data-cmd="formatBlock" data-value="&lt;blockquote&gt;" title="Quote" aria-label="Quote">❝</button>
+      <button type="button" data-cmd="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list">• List</button>
+      <button type="button" data-cmd="insertOrderedList" title="Numbered list" aria-label="Numbered list">1. List</button>
+      <button type="button" data-cmd="createLink" title="Link" aria-label="Link">Link</button>
+      <span class="review-toolbar-gap"></span>
+      <button type="button" data-cmd="removeFormat" title="Clear formatting" aria-label="Clear formatting">Tx</button>
+      <button type="button" data-cmd="undo" title="Undo" aria-label="Undo">↶</button>
+      <button type="button" data-cmd="redo" title="Redo" aria-label="Redo">↷</button>
+    </div>
+    <div class="review-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Review text" data-review-body>{{ review_html|safe }}</div>
+  </div>
+  <div class="review-actions">
+    <button class="button button-primary" type="button" data-review-save>{% if review %}Update review{% else %}Save review{% endif %}</button>
+    {% if review %}<button class="button button-light" type="button" data-review-delete>Delete review</button>{% endif %}
+    <span class="review-status" role="status" data-review-status></span>
+  </div>
+</section>

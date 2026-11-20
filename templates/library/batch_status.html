@@ -8,6 +8,6 @@
 {% if job.error %}<div class="preview-warning"><strong>Error</strong><span>{{ job.error }}</span></div>{% endif %}
 {% if job.failed %}<div class="preview-warning"><strong>Failed files (their original tags were put back)</strong><span>{{ job.failed|join:" · " }}</span></div>{% endif %}
 {% if job.log_path %}<p class="subheading">Log of what was written: <code>{{ job.log_path }}</code></p>{% endif %}
-{% if job.running %}<script>setTimeout(function () { location.reload(); }, 2000);</script>{% endif %}
+{% if job.running %}<div class="job-strip" data-poll="2000" role="status"><span class="status-dot status-scanning"></span><span>Writing tags… this page updates when it finishes.</span></div>{% endif %}
 {% endif %}
 {% endblock %}
