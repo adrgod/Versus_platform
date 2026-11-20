@@ -9,7 +9,7 @@
     {% if parent %}<a class="folder-row folder-parent" href="?path={{ parent|urlencode }}"><span class="folder-symbol">↑</span><span>Parent folder</span><span class="row-end">UP</span></a>{% endif %}
     {% for directory in directories %}<a class="folder-row" href="?path={{ directory|urlencode }}"><span class="folder-symbol">▱</span><span>{{ directory.name }}</span><span class="row-end">OPEN →</span></a>{% empty %}<p class="empty-note">No subfolders in this directory.</p>{% endfor %}
   </div>
-  {% if current %}<form method="post" action="{% url 'library:choose-folder' %}" class="folder-select-form">{% csrf_token %}<input type="hidden" name="folder" value="{{ current }}"><span>Use this folder as the scan source?</span><button class="button button-primary" type="submit">Select this folder</button></form>{% endif %}
+  {% if current %}<form method="post" action="{% url 'library:choose-folder' %}" class="folder-select-form">{% csrf_token %}<input type="hidden" name="folder" value="{{ current }}"><span>Use this folder as the source for Import Data?</span><button class="button button-primary" type="submit">Select this folder</button></form>{% endif %}
 </section>
 <p class="security-note">Browsing starts at the host Mac’s filesystem root. macOS privacy permissions still limit which folders this app can list.</p>
 {% endblock %}

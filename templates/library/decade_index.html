@@ -14,9 +14,9 @@
     <div class="decade-stats"><span><b>{{ decade.album_count }}</b> albums</span><span><b>{{ decade.artist_count }}</b> artists</span><span><b>{% if decade.average != None %}★ {{ decade.average|floatformat:2 }}{% else %}—{% endif %}</b> average of {{ decade.rated_count }} rated</span><a class="quiet-link" href="{{ decade.explore_url }}">Explore the {{ decade.label }} <span>↗</span></a></div>
   </div>
   {% if decade.top %}<ol class="ranking-list">
-    {% for album in decade.top %}<li><a href="{% url 'library:album-detail' album.album_id %}"><span class="rank">{{ forloop.counter|stringformat:"02d" }}</span><span class="rank-cover">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="" loading="lazy">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</span><span class="rank-copy"><strong>{{ album.album_name }}</strong><small>{{ album.artist_name }} · {{ album.sort_year }}</small></span><span class="rank-score">★ {{ album.rating|floatformat:2 }}<small>{{ album.rating_votes }} vote{{ album.rating_votes|pluralize }}</small></span></a></li>{% endfor %}
-  </ol>{% else %}<p class="empty-note">No rated albums from this decade yet. Ratings come from the MusicBrainz lookup.</p>{% endif %}
+    {% for album in decade.top %}<li><a href="{% url 'library:album-detail' album.album_id %}"><span class="rank">{{ forloop.counter|stringformat:"02d" }}</span><span class="rank-cover">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="" loading="lazy">{% else %}<span class="cover-placeholder" aria-hidden="true">{{ album.album_name|first|upper|default:"♪" }}</span>{% endif %}</span><span class="rank-copy"><strong>{{ album.album_name }}</strong><small>{{ album.artist_name }} · {{ album.sort_year }}</small></span><span class="rank-score">★ {{ album.rating|floatformat:2 }}<small>{{ album.rating_votes }} vote{{ album.rating_votes|pluralize }}</small></span></a></li>{% endfor %}
+  </ol>{% else %}<p class="empty-note">No rated albums from this decade yet. Ratings come from Lookup Details Online.</p>{% endif %}
 </section>
 {% endfor %}
-{% else %}<div class="empty-state"><span class="empty-mark">∅</span><h3>No dated albums</h3><p>Albums need a year in their tags or from the MusicBrainz lookup.</p></div>{% endif %}
+{% else %}<div class="empty-state"><span class="empty-mark">∅</span><h3>No dated albums</h3><p>Albums need a year in their tags or from Lookup Details Online.</p></div>{% endif %}
 {% endblock %}

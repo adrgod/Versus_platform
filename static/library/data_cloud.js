@@ -124,9 +124,10 @@ function mountDataCloud() {
   const animate = () => {
     animationFrame = requestAnimationFrame(animate);
     if (!dragging && !hoverPaused) {
-      sphere.rotation.y += angularVelocity || 0.00022;
+      const idleSpin = document.documentElement.dataset.motion === "reduced" ? 0 : 0.00022;
+      sphere.rotation.y += angularVelocity || idleSpin;
       angularVelocity *= 0.96;
-      if (Math.abs(angularVelocity) < 0.00012) angularVelocity = 0.00022;
+      if (Math.abs(angularVelocity) < 0.00012) angularVelocity = idleSpin;
     }
     sphere.updateMatrixWorld(true);
     for (const object of sphere.children) {

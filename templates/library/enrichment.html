@@ -1,27 +1,27 @@
 {% extends "library/base.html" %}
-{% block title %}Online lookup{% endblock %}
+{% block title %}Lookup &amp; Enrich{% endblock %}
 {% block content %}
-<div class="breadcrumb"><a href="{% url 'library:explore' %}">Explore</a><span>/</span>Online lookup</div>
-<section class="page-heading"><div><span class="eyebrow">ENRICHMENT / MUSICBRAINZ</span><h1>Online lookup</h1><p class="subheading">Adds genres, country, formation year, line-ups and instruments, studios, producers, engineers, artwork credits, discographies and ratings from <a class="link-button" href="https://musicbrainz.org" rel="noreferrer" target="_blank">MusicBrainz</a>. Your MP3 tags are never changed.</p></div>
+<div class="breadcrumb"><a href="{% url 'library:explore' %}">Explore</a><span>/</span>Lookup &amp; Enrich</div>
+<section class="page-heading"><div><span class="eyebrow">LOOKUP &amp; ENRICH / MUSICBRAINZ</span><h1>Lookup Details Online</h1><p class="subheading">Adds genres, country, formation year, line-ups and instruments, studios, producers, engineers, artwork credits, discographies and ratings from <a class="link-button" href="https://musicbrainz.org" rel="noreferrer" target="_blank">MusicBrainz</a>. Your MP3 tags are never changed.</p></div>
   <div class="heading-actions">
     {% if running %}
-      <form method="post" action="{% url 'library:enrichment-stop' %}">{% csrf_token %}<input type="hidden" name="job" value="{{ running.kind }}"><button class="button button-light" type="submit">Stop {% if running.kind == "notes" %}reading notes{% else %}MusicBrainz lookup{% endif %}</button></form>
+      <form method="post" action="{% url 'library:enrichment-stop' %}">{% csrf_token %}<input type="hidden" name="job" value="{{ running.kind }}"><button class="button button-light" type="submit">Stop {{ running.label }}</button></form>
     {% else %}
-      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Start online lookup</button></form>
-      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again">Refresh everything</button></form>
+      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="globe" %}Lookup Details Online</button></form>
+      <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again, even ones already matched">Redo for all artists</button></form>
     {% endif %}
   </div>
 </section>
 
-{% if job %}<section class="source-strip enrichment-job">
-  <div class="source-copy"><span class="eyebrow">{% if job.running %}LOOKING UP{% elif job.error %}STOPPED WITH AN ERROR{% else %}LAST RUN{% endif %}</span><strong>{% if job.running %}{{ job.stats.current|default:"Starting…" }}{% elif job.error %}{{ job.error }}{% else %}Finished {{ job.finished|date:"j M Y, H:i" }}{% endif %}</strong></div>
+{% if job %}<section class="source-strip enrichment-job"{% if job.running %} data-poll="3000"{% endif %}>
+  <div class="source-copy"><span class="eyebrow">{% if job.running %}LOOKUP DETAILS ONLINE · RUNNING{% elif job.error %}STOPPED WITH AN ERROR{% else %}LAST RUN{% endif %}</span><strong>{% if job.running %}{{ job.stats.current|default:"Starting…" }}{% elif job.error %}{{ job.error }}{% else %}Finished {{ job.finished|date:"j M Y, H:i" }}{% endif %}</strong></div>
   <div class="job-meter" role="progressbar" aria-valuemin="0" aria-valuemax="{{ job.stats.artists_total }}" aria-valuenow="{{ job.stats.artists_done }}"><span>{{ job.stats.artists_done }} / {{ job.stats.artists_total }} artists</span><progress max="{{ job.stats.artists_total|default:1 }}" value="{{ job.stats.artists_done }}"></progress></div>
   <div class="scan-state"><span class="status-dot {% if job.running %}status-scanning{% elif job.error %}status-failed{% endif %}"></span><span>{{ job.stats.artists_matched }} artists · {{ job.stats.albums_matched }} albums matched</span><small>{{ job.stats.artists_not_found }} artists · {{ job.stats.albums_not_found }} albums without a match</small></div>
 </section>
 {% if job.stats.errors %}<details class="scan-errors"><summary>{{ job.stats.errors|length }} lookup error{{ job.stats.errors|length|pluralize }}</summary><pre>{% for error in job.stats.errors %}{{ error }}
 {% endfor %}</pre></details>{% endif %}
 {% endif %}
-{% if running %}<script>setTimeout(function () { location.reload(); }, 3000);</script>{% endif %}
+{% if running and not job.running %}<span hidden data-poll="3000"></span>{% endif %}
 
 <section class="stat-grid" aria-label="Lookup coverage">
   <article class="stat-cell stat-primary"><span>ARTISTS MATCHED</span><strong>{{ artist_counts.matched }}</strong><small>{{ artist_counts.pending }} not looked up yet</small></article>
@@ -32,10 +32,10 @@
 <p class="security-note">MusicBrainz allows about one request a second, so a first run takes roughly 3–5 seconds per album. Answers are cached in <code>db/musicbrainz_cache</code>, so later runs are quick. From a terminal: <code>python manage.py enrich_library</code>.</p>
 
 <section class="genre-section notes-lookup" aria-label="Liner notes, lyrics and facts">
-  <div class="section-heading"><div><span class="eyebrow">LINER NOTES / LYRICS / LOCAL MODEL</span><h2>Notes, lyrics &amp; story</h2></div>
+  <div class="section-heading"><div><span class="eyebrow">LINER NOTES · PDFS · LYRICS · LOCAL AI MODEL</span><h2>Enrich Data with AI</h2></div>
     {% if not running %}<div class="heading-actions">
-      <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">Read notes &amp; lyrics</button></form>
-      <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Read everything and extract again">Refresh everything</button></form>
+      <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="sparkles" %}Enrich Data with AI</button></form>
+      <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Read every album again and extract its facts again">Redo for all albums</button></form>
     </div>{% endif %}
   </div>
   <p class="subheading">Reads .txt, .nfo and .pdf files in each album folder and the lyrics of every track (MP3 lyrics tag, a .lrc/.txt file named like the track, else <a class="link-button" href="https://lrclib.net" target="_blank" rel="noreferrer">LRCLIB</a>). A local model then picks out keywords, moods, lyric themes and the band's history: who joined or left, splits, hiatuses and why.</p>

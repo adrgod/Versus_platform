@@ -1,0 +1,22 @@
+{% comment %}
+The metadata actions for one artist or album, named the same everywhere:
+Edit Tags · Read Local MP3 Tags · Lookup Details Online · Enrich Data with AI.
+Include with: scope="album_id"|"artist_id", object_id, noun ("album"|"artist").
+{% endcomment %}
+<div class="metadata-actions" role="group" aria-label="Update this {{ noun }}">
+  <a class="button button-light" href="{% if scope == "album_id" %}{% url 'library:album-edit-tags' object_id %}{% else %}{% url 'library:artist-edit-tags' object_id %}{% endif %}" title="Change this {{ noun }}'s tags by hand">{% include "library/_icon.html" with name="pencil" %}Edit Tags</a>
+  <form method="post" action="{% url 'library:read-local-tags' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}">
+    <button class="button button-light" type="submit" {% if importing %}disabled title="Import Data is running"{% else %}title="Read this {{ noun }}'s MP3 files again and update the catalogue"{% endif %}>{% include "library/_icon.html" with name="tag" %}Read Local MP3 Tags</button>
+  </form>
+  <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}"><input type="hidden" name="refresh" value="1">
+    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Look this {{ noun }} up on MusicBrainz"{% endif %}>{% include "library/_icon.html" with name="globe" %}Lookup Details Online</button>
+  </form>
+  <form method="post" action="{% url 'library:notes-start' %}">{% csrf_token %}<input type="hidden" name="{{ scope }}" value="{{ object_id }}"><input type="hidden" name="refresh" value="1">
+    <button class="button button-light" type="submit" {% if job and job.running %}disabled title="{{ job.label }} is running"{% else %}title="Read liner notes, PDFs and lyrics, then let the local AI model extract facts"{% endif %}>{% include "library/_icon.html" with name="sparkles" %}Enrich Data with AI</button>
+  </form>
+</div>
+{% if job and job.running %}<div class="job-strip"{% if job_here %} data-poll="3000"{% endif %} role="status">
+  <span class="status-dot status-scanning"></span>
+  <span><strong>{{ job.label }}</strong> is running{% if job.stats.current %} · {{ job.stats.current }}{% endif %}</span>
+  {% if job_here %}<small>This page updates when it finishes.</small>{% else %}<a class="quiet-link" href="{% url 'library:enrichment' %}">See progress <span>↗</span></a>{% endif %}
+</div>{% endif %}

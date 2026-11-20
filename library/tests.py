@@ -68,7 +68,7 @@ class LibraryWorkflowTests(TestCase):
         self.assertContains(album_response, "Test Album")
         self.assertEqual(quality_response.status_code, 200)
         self.assertContains(quality_response, "Test Track")
-        self.assertContains(dashboard_response, "View completeness by batch")
+        self.assertContains(dashboard_response, "View Completeness")
 
     def test_completeness_report_groups_batches_artists_and_albums(self):
         import_records([self.record(album="Other Album", title="Other Track")])

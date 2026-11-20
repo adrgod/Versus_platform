@@ -22,6 +22,7 @@ urlpatterns = [
     path("location/", views.folder_browser, name="folder-browser"),
     path("location/choose/", views.choose_folder, name="choose-folder"),
     path("refresh/", views.refresh_library, name="refresh"),
+    path("tags/read/", views.read_local_tags_view, name="read-local-tags"),
     path("artists/", views.artist_list, name="artist-list"),
     path("artists/<int:artist_id>/", views.artist_detail, name="artist-detail"),
     path("albums/", views.album_list, name="album-list"),
@@ -34,6 +35,9 @@ urlpatterns = [
     path("batches/<str:day>/status/", views.batch_status, name="batch-status"),
     path("quality/", views.quality_report, name="quality-report"),
     path("quality/completeness/", views.completeness_report, name="completeness-report"),
+    path("quality/completeness/fill/", views.fill_missing_start, name="fill-missing"),
     path("tracks/<int:track_id>/edit/", views.edit_track_tags, name="edit-tags"),
+    path("albums/<int:album_id>/edit/", views.album_edit_tags, name="album-edit-tags"),
+    path("artists/<int:artist_id>/edit/", views.artist_edit_tags, name="artist-edit-tags"),
     path("tracks/<int:track_id>/confirm/", views.confirm_tag_edit, name="confirm-tag-edit"),
 ]

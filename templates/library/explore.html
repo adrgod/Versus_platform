@@ -4,9 +4,9 @@
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:browse' %}">Browse</a><span>/</span>Explore</div>
 <section class="page-heading"><div><span class="eyebrow">CATALOG / TAG EXPLORER</span><h1>Explore</h1><p class="subheading">{% if selected %}{{ artists|length }} artist{{ artists|length|pluralize }} · {{ album_total }} album{{ album_total|pluralize }} in this selection.{% else %}Pick tags to narrow the library. Within a group any value matches; across groups all must match.{% endif %}</p></div>
-  <div class="heading-actions"><a class="button button-light" href="{% url 'library:decade-index' %}">Albums by decade</a><a class="button button-light" href="{% url 'library:enrichment' %}">Online lookup</a></div>
+  <div class="heading-actions"><a class="button button-light" href="{% url 'library:decade-index' %}">Albums by decade</a><a class="button button-light" href="{% url 'library:enrichment' %}">Lookup &amp; Enrich</a></div>
 </section>
-{% if not has_profiles %}<div class="preview-warning"><strong>Only file tags so far</strong><span>Genres, labels and years come from your MP3 tags. Run the <a class="link-button" href="{% url 'library:enrichment' %}">MusicBrainz lookup</a> to add countries, line-ups, instruments, studios, engineers, artwork credits and ratings.</span></div>{% endif %}
+{% if not has_profiles %}<div class="preview-warning"><strong>Only file tags so far</strong><span>Genres, labels and years come from your MP3 tags. Run <a class="link-button" href="{% url 'library:enrichment' %}">Lookup Details Online</a> to add countries, line-ups, instruments, studios, engineers, artwork credits and ratings.</span></div>{% endif %}
 
 <div class="explore-layout">
   <aside class="facet-panel" aria-label="Filter by tag">
@@ -21,7 +21,7 @@
         {% if group.more_rows %}<button class="link-button facet-toggle" type="button" data-facet-more data-more-label="Show all {{ group.rows|length }}">Show all {{ group.rows|length }}</button>{% endif %}
       </details>
     {% empty %}
-      <p class="empty-note">No tags yet. Refresh the library first.</p>
+      <p class="empty-note">No tags yet. Run Import Data first.</p>
     {% endfor %}
   </aside>
 
@@ -40,7 +40,7 @@
       <div class="section-heading"><div><span class="eyebrow">RELEASES</span><h2>Albums <span class="count-badge">{{ album_total }}</span></h2></div>
         <nav class="sort-tabs" aria-label="Sort albums">{% for option in sorts %}<a href="{{ option.url }}" class="{% if option.active %}active{% endif %}">{{ option.label }}</a>{% endfor %}</nav>
       </div>
-      <div class="album-grid">{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}" loading="lazy">{% else %}<span class="cover-placeholder">V.</span>{% endif %}{% if album.rating != None %}<span class="cover-rating">★ {{ album.rating|floatformat:1 }}</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.artist_name }}</span><small>{{ album.sort_year|default:"YEAR UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}</div>
+      <div class="album-grid">{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}" loading="lazy">{% else %}<span class="cover-placeholder" aria-hidden="true">{{ album.album_name|first|upper|default:"♪" }}</span>{% endif %}{% if album.rating != None %}<span class="cover-rating">★ {{ album.rating|floatformat:1 }}</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.artist_name }}</span><small>{{ album.sort_year|default:"YEAR UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}</div>
       {% if page.has_other_pages %}<nav class="pager" aria-label="Album pages">
         {% if page.has_previous %}<a class="button button-light" href="?{{ page_query }}{% if page_query %}&{% endif %}page={{ page.previous_page_number }}">← Previous</a>{% endif %}
         <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>

@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,10 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 # EasyID3 has no "publisher" key by default; it is the TPUB frame.
 EasyID3.RegisterTextKey("publisher", "TPUB")
+# Artist details have no standard ID3 frame, so they are kept in user text (TXXX) frames.
+# They are part of an artist's identity in the catalogue (see importer), so they are read like any tag.
+EasyID3.RegisterTXXXKey("artist_country", "ARTIST_COUNTRY")
+EasyID3.RegisterTXXXKey("artist_formed_year", "ARTIST_FORMED_YEAR")
 
 
 def format_name(name):
@@ -71,25 +76,74 @@ def compress_image(data):
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def _batch_index(parts):
-    """Index of the closest YYYYMMDD folder that leaves publisher/band/album/file below it."""
-    for index in range(len(parts) - 5, -1, -1):
-        name = parts[index]
-        if len(name) != 8 or not name.isdigit():
+@dataclass(frozen=True)
+class BatchLayout:
+    """Where a file sits in a batch folder layout (see :func:`batch_layout`)."""
+
+    index: int        # position of the YYYYMMDD folder in the path parts
+    publisher: str
+    artist: str
+    album: str
+    album_depth: int  # number of path parts up to and including the album folder
+
+
+# "Artist - Album", "Artist_-_Album", "Artist – Album" (spaces or underscores around the dash).
+ARTIST_ALBUM_SEPARATOR = re.compile(r"(?:\s+|_+)[-–—](?:\s+|_+)")
+
+
+def split_artist_album(folder_name):
+    """("Artist", "Album") from an "Artist - Album" folder name; None without a separator."""
+    parts = ARTIST_ALBUM_SEPARATOR.split(folder_name.strip(), maxsplit=1)
+    if len(parts) != 2:
+        return None
+    artist, album = (" ".join(part.replace("_", " ").split()) for part in parts)
+    return (artist, album) if artist and album else None
+
+
+def _is_batch_date(name):
+    if len(name) != 8 or not name.isdigit():
+        return False
+    try:
+        datetime.strptime(name, "%Y%m%d")
+    except ValueError:
+        return False
+    return True
+
+
+def batch_layout(file_path):
+    """The batch layout of a file, or None. Two layouts are recognised:
+
+    * ``YYYYMMDD/LABEL/ARTIST - ALBUM/[CDn/...]/track.mp3`` (the most common one), and
+    * ``YYYYMMDD/LABEL/ARTIST/ALBUM/[CDn/...]/track.mp3``.
+
+    The closest ``YYYYMMDD`` folder that gives one of them wins. A folder right below
+    the label whose name has an "Artist - Album" separator is the combined form.
+    """
+    parts = Path(file_path).parts
+    for index in range(len(parts) - 4, -1, -1):
+        if not _is_batch_date(parts[index]):
             continue
-        try:
-            datetime.strptime(name, "%Y%m%d")
-        except ValueError:
-            continue
-        return index
+        below = parts[index + 1:-1]  # folders between the date folder and the file
+        publisher, rest = below[0].strip(), below[1:]
+        combined = split_artist_album(rest[0])
+        if combined:
+            return BatchLayout(index, publisher, combined[0], combined[1], index + 3)
+        if len(rest) >= 2:
+            return BatchLayout(index, publisher, rest[0].strip(), rest[1].strip(), index + 4)
     return None
 
 
+def _batch_index(parts):
+    """Index of the batch date folder when the path follows a batch layout, else None."""
+    layout = batch_layout(Path(*parts)) if parts else None
+    return layout.index if layout else None
+
+
 def album_folder(file_path):
-    """The album folder of ``.../YYYYMMDD/PUBLISHER/BAND/ALBUM/...``; else the file's folder."""
+    """The album folder of a batch layout path (see :func:`batch_layout`); else the file's folder."""
     path = Path(file_path)
-    index = _batch_index(path.parts)
-    return Path(*path.parts[: index + 4]) if index is not None else path.parent
+    layout = batch_layout(path)
+    return Path(*path.parts[: layout.album_depth]) if layout else path.parent
 
 
 DISC_FOLDER = re.compile(r"^(?:cd|dis[ck])[\s._-]*0*(\d{1,2})(?!\d)", re.IGNORECASE)
@@ -128,17 +182,12 @@ def parse_track_filename(file_path):
 
 
 def derived_tags(file_path):
-    """Tag values the path implies; empty unless it follows ``YYYYMMDD/PUBLISHER/BAND/ALBUM/...``."""
+    """Tag values the path implies; empty unless it follows a batch layout (:func:`batch_layout`)."""
     path = Path(file_path)
-    parts = path.parts
-    index = _batch_index(parts)
-    if index is None:
+    layout = batch_layout(path)
+    if layout is None:
         return {}
-    values = {
-        "publisher": parts[index + 1].strip(),
-        "artist": parts[index + 2].strip(),
-        "album": parts[index + 3].strip(),
-    }
+    values = {"publisher": layout.publisher, "artist": layout.artist, "album": layout.album}
     number, title = parse_track_filename(path)
     if number is not None:
         values["tracknumber"] = str(number)
@@ -200,18 +249,33 @@ def find_cover_image(file_path, album, artist, cache=None):
 
 
 def parse_batch_path(file_path):
-    """Batch date and publisher from ``.../YYYYMMDD/PUBLISHER/BAND/ALBUM/file``.
+    """Batch date and publisher from ``.../YYYYMMDD/PUBLISHER/ARTIST - ALBUM/file`` (or ``.../ARTIST/ALBUM/file``).
 
     Returns ``(date | None, str)``. The closest ``YYYYMMDD`` folder that still
     leaves room for publisher, band, album and file is the batch; the folder
     after it is the publisher. Paths that do not follow the layout give
     ``(None, "")``.
     """
-    parts = Path(file_path).parts
-    index = _batch_index(parts)
-    if index is None:
+    layout = batch_layout(file_path)
+    if layout is None:
         return None, ""
-    return datetime.strptime(parts[index], "%Y%m%d").date(), parts[index + 1].strip()
+    return datetime.strptime(Path(file_path).parts[layout.index], "%Y%m%d").date(), layout.publisher
+
+
+def batch_date_from_path(file_path):
+    """Batch date of a file: the closest ``YYYYMMDD`` folder above it, at any depth.
+
+    Looser than :func:`parse_batch_path` on purpose: ``20261013/Label/Band - Album/01.mp3``
+    still belongs to the 13 Oct 2026 batch even though band and album share a folder
+    (artist/album are then not derived from the path). Returns None without such a folder.
+    """
+    for name in reversed(Path(file_path).parent.parts):
+        if len(name) == 8 and name.isdigit():
+            try:
+                return datetime.strptime(name, "%Y%m%d").date()
+            except ValueError:
+                continue
+    return None
 
 
 def read_file_metadata(file_path, config, image_cache=None):
@@ -264,7 +328,7 @@ def read_file_metadata(file_path, config, image_cache=None):
             file_path, file_data.get("album", ""), file_data.get("artist", ""), image_cache
         )
 
-    file_data["batch_date"] = parse_batch_path(file_path)[0]
+    file_data["batch_date"] = batch_date_from_path(file_path)
 
     return file_data
 
@@ -363,6 +427,12 @@ def read_all_metadata(source_folder, config, errors=None):
             if file_path.is_file() and file_path.suffix.lower() == ".mp3"
         )
 
+    return read_metadata_for_files(mp3_files, config, errors=errors)
+
+
+def read_metadata_for_files(mp3_files, config, errors=None):
+    """Read and post-process the given MP3 files (whole albums give the best length class)."""
+    mp3_files = [Path(file_path) for file_path in mp3_files]
     tracks = []
     image_cache = {}
     for file_path in mp3_files:

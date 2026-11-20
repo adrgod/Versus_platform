@@ -1,8 +1,8 @@
 {% extends "library/base.html" %}
-{% block title %}Edit ID3 tags{% endblock %}
+{% block title %}Edit Tags{% endblock %}
 {% block content %}
-<div class="breadcrumb"><a href="{% url 'library:quality-report' %}">Tag health</a><span>/</span>Edit tags</div>
-<section class="page-heading"><div><span class="eyebrow">ID3 EDITOR / TRACK {{ track.track_id }}</span><h1>{{ track.track_name|default:"Untitled track" }}</h1><p class="subheading">{{ track.artist_name }} · {{ track.album_name }}</p></div><a class="button button-light" href="{% url 'library:quality-report' %}">Cancel</a></section>
+<div class="breadcrumb"><a href="{% url 'library:quality-report' %}">Tag health</a><span>/</span>Edit Tags</div>
+<section class="page-heading"><div><span class="eyebrow">EDIT TAGS / TRACK {{ track.track_id }}</span><h1>{{ track.track_name|default:"Untitled track" }}</h1><p class="subheading">{{ track.artist_name }} · {{ track.album_name }}</p></div><a class="button button-light" href="{% url 'library:quality-report' %}">Cancel</a></section>
 <section class="editor-layout">
   <form class="tag-form" method="post">{% csrf_token %}
     {% for field in form %}<div class="field-row"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<span class="field-error">{{ field.errors|join:", " }}</span>{% endif %}</div>{% endfor %}

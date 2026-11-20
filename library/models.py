@@ -8,6 +8,11 @@ class Artist(models.Model):
     artist_country = models.CharField(max_length=30, blank=True)
     artist_formed_year = models.IntegerField(null=True, blank=True)
     artist_photo = models.BinaryField(editable=True, null=True, blank=True)
+    # The value every page shows: the file tag, else what lookups found. Rebuilt by
+    # services/resolver.py; ``resolved_sources`` says where each value came from.
+    resolved_country = models.CharField(max_length=100, blank=True)
+    resolved_formed_year = models.IntegerField(null=True, blank=True)
+    resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 
@@ -29,6 +34,13 @@ class Album(models.Model):
     album_publisher = models.CharField(max_length=100, blank=True)
     album_batch_date = models.DateField(null=True, blank=True)
     album_length_class = models.CharField(max_length=10, blank=True)
+    # What every page shows (see Artist.resolved_*): the file tag, else what lookups found.
+    resolved_year = models.IntegerField(null=True, blank=True)
+    resolved_genre = models.CharField(max_length=200, blank=True)
+    resolved_label = models.CharField(max_length=100, blank=True)
+    resolved_country = models.CharField(max_length=100, blank=True)
+    resolved_credits = models.JSONField(default=dict, blank=True)
+    resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 
@@ -48,6 +60,8 @@ class Track(models.Model):
     track_duration = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
     track_dq_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     track_file_path = models.CharField(max_length=500, blank=False)
+    resolved_number = models.IntegerField(null=True, blank=True)  # tag, else the file name
+    resolved_sources = models.JSONField(default=dict, blank=True)
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 
@@ -137,6 +151,7 @@ class AlbumProfile(models.Model):
     rating = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
     rating_votes = models.IntegerField(default=0)
     credits = models.JSONField(default=list, blank=True)
+    country = models.CharField(max_length=100, blank=True)  # copied from the artist
     enriched_at = models.DateTimeField(null=True, blank=True)
 
 
@@ -149,6 +164,8 @@ class FacetKind(models.TextChoices):
     ENGINEER = "engineer", "Sound engineer"
     ARTWORK = "artwork", "Artwork"
     LABEL = "label", "Label"
+    COMPOSER = "composer", "Composer"
+    LYRICIST = "lyricist", "Lyricist"
     MUSICIAN = "musician", "Album musician"
     # From liner notes, biographies and lyrics (see services/insights.py)
     KEYWORD = "keyword", "Album keyword"
@@ -252,3 +269,17 @@ class AlbumInsight(models.Model):
     events = models.JSONField(default=list, blank=True)
     extracted_at = models.DateTimeField(null=True, blank=True)
     llm_duration_seconds = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+
+
+class AlbumCredit(models.Model):
+    """A credit found in the user's own files (MP3 tags, liner notes), with where it came from."""
+
+    SOURCE_TAGS, SOURCE_NOTES = "tags", "notes"
+
+    album = models.ForeignKey(Album, on_delete=models.CASCADE, related_name="local_credits")
+    kind = models.CharField(max_length=20, choices=FacetKind.choices)
+    name = models.CharField(max_length=200)
+    detail = models.CharField(max_length=300, blank=True)
+    source = models.CharField(max_length=20)
+    evidence = models.CharField(max_length=300, blank=True)  # the quote or tag it was read from
+    count = models.IntegerField(default=0)

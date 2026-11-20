@@ -1,6 +1,7 @@
 """Fills empty ID3 tags in MP3 files from the batch folder layout.
 
-Layout: ``.../YYYYMMDD/PUBLISHER/BAND/ALBUM/[CDn/...]/01 - Track Name.mp3``.
+Layout: ``.../YYYYMMDD/LABEL/ARTIST - ALBUM/[CDn/...]/01 - Track Name.mp3`` (most common)
+or ``.../YYYYMMDD/LABEL/ARTIST/ALBUM/[CDn/...]/01 - Track Name.mp3``; see files_scanner.batch_layout.
 Only tags that are empty in the file are written (file by file), and only for
 files whose path follows that layout. Nothing is backed up on disk: the file's
 original tag block is kept in memory while it is written and put back at once
@@ -17,7 +18,7 @@ from mutagen.id3 import APIC, ID3, ID3NoHeaderError, TALB, TIT2, TPE1, TPOS, TPU
 
 from library import repository
 from library.models import Track
-from library.services.files_scanner import derived_tags, find_cover_image, parse_batch_path
+from library.services.files_scanner import batch_date_from_path, derived_tags, find_cover_image
 
 FRAMES = {
     "artist": ("TPE1", TPE1),
@@ -135,7 +136,7 @@ def batch_files(day):
     stored = Track.objects.filter(track_file_path__contains=wanted).values_list("track_file_path", flat=True)
     return sorted(
         path for path in set(stored)
-        if parse_batch_path(path)[0] == day and repository.is_allowed_file(path)
+        if batch_date_from_path(path) == day and repository.is_allowed_file(path)
     )
 
 

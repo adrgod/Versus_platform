@@ -23,6 +23,7 @@ from library.models import (
     Album, AlbumFacet, AlbumProfile, Artist, ArtistFacet, ArtistProfile,
     EnrichmentStatus, Facet, FacetKind,
 )
+from library.services import resolver
 from library.services.musicbrainz import MusicBrainzClient, MusicBrainzError
 
 SOURCE = "musicbrainz"
@@ -159,8 +160,14 @@ def artists_to_enrich(refresh=False, artist_ids=None):
     return list(queryset.filter(pk__in=pending | with_new_albums))
 
 
-def enrich_library(client=None, *, refresh=False, artist_ids=None, progress=None, should_stop=None):
+def enrich_library(client=None, *, refresh=False, artist_ids=None, album_ids=None, progress=None, should_stop=None):
+    """Lookup Details Online for the library, some artists, or only some albums.
+
+    With ``album_ids`` each album's artist is matched again, but only those albums are looked up.
+    """
     client = client or MusicBrainzClient()
+    if album_ids:
+        artist_ids = sorted(set(Album.objects.filter(pk__in=album_ids).values_list("artist_id", flat=True)))
     artists = artists_to_enrich(refresh=refresh, artist_ids=artist_ids)
     stats = EnrichmentStats(artists_total=len(artists))
     for artist in artists:
@@ -170,7 +177,7 @@ def enrich_library(client=None, *, refresh=False, artist_ids=None, progress=None
         if progress:
             progress(stats)
         try:
-            enrich_artist(client, artist, stats=stats, refresh=refresh or artist_ids is not None)
+            enrich_artist(client, artist, stats=stats, refresh=refresh or artist_ids is not None, only_album_ids=album_ids)
         except Exception as error:  # one artist's problem must not end the whole run
             message = _error_text(error)
             stats.errors.append(f"{artist.artist_name}: {message}")
@@ -193,13 +200,45 @@ def _mark_error(model, note, **owner):
         pass  # e.g. the artist or album was deleted by a library scan meanwhile
 
 
-def enrich_artist(client, artist, *, stats=None, refresh=True):
+def _artist_tags_missing(profile, artist):
+    """Common tags the artist still lacks (country, genres); empty when it is complete."""
+    missing = []
+    if not (profile.country or artist.artist_country):
+        missing.append("country")
+    if not ArtistFacet.objects.filter(artist=artist, source=SOURCE, facet__kind=FacetKind.GENRE).exists():
+        missing.append("genre")
+    return missing
+
+
+def enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=None):
+    """Look an artist and its albums up, then rebuild the values the pages show."""
+    try:
+        return _enrich_artist(client, artist, stats=stats, refresh=refresh, only_album_ids=only_album_ids)
+    finally:
+        resolver.resolve_for_artist(artist)
+
+
+def _enrich_artist(client, artist, *, stats=None, refresh=True, only_album_ids=None):
+    """Look an artist up, then its albums.
+
+    For an album-only run the artist's stored tags come first: when it is already matched and
+    has its country and genres, the artist search and detail requests are skipped (only its
+    release groups are fetched, to match the albums) and the albums inherit the artist's tags.
+    """
     stats = stats or EnrichmentStats()
     profile, _ = ArtistProfile.objects.get_or_create(artist=artist)
     albums = list(artist.album_set.all())
     titles = [album.album_name for album in albums]
 
-    if profile.id_set_manually and profile.external_id:
+    reuse_artist = (
+        bool(only_album_ids)
+        and profile.status == EnrichmentStatus.MATCHED
+        and bool(profile.external_id)
+        and not _artist_tags_missing(profile, artist)
+    )
+    if reuse_artist:
+        release_groups = client.release_groups(profile.external_id)
+    elif profile.id_set_manually and profile.external_id:
         mbid, score, note = profile.external_id, Decimal("1.00"), "MusicBrainz ID set by hand"
         release_groups = client.release_groups(mbid)
     else:
@@ -213,17 +252,20 @@ def enrich_artist(client, artist, *, stats=None, refresh=True):
             stats.artists_not_found += 1
             return profile
 
-    data = client.artist(mbid)
-    if data is None:
-        _store_artist_not_found(profile, f"MusicBrainz has no artist {mbid}")
-        stats.artists_not_found += 1
-        return profile
+    if not reuse_artist:
+        data = client.artist(mbid)
+        if data is None:
+            _store_artist_not_found(profile, f"MusicBrainz has no artist {mbid}")
+            stats.artists_not_found += 1
+            return profile
 
-    with transaction.atomic():
-        _store_artist(profile, artist, data, score, note, release_groups, albums)
-    stats.artists_matched += 1
+        with transaction.atomic():
+            _store_artist(profile, artist, data, score, note, release_groups, albums)
+        stats.artists_matched += 1
 
     for album in albums:
+        if only_album_ids and album.pk not in only_album_ids:
+            continue
         album_profile = AlbumProfile.objects.filter(album=album).first()
         if not refresh and album_profile and album_profile.status in (EnrichmentStatus.MATCHED, EnrichmentStatus.NOT_FOUND):
             continue
@@ -238,6 +280,9 @@ def enrich_artist(client, artist, *, stats=None, refresh=True):
             stats.albums_matched += 1
         else:
             stats.albums_not_found += 1
+    for album in albums:
+        if not only_album_ids or album.pk in only_album_ids:
+            inherit_artist_tags(album)
     return profile
 
 
@@ -456,6 +501,7 @@ def enrich_album(client, album, release_groups):
         profile.enriched_at = timezone.now()
         profile.save()
         AlbumFacet.objects.filter(album=album, source=SOURCE).delete()
+        inherit_artist_tags(album)
         return False
 
     release = _richest_release(client, group["id"])
@@ -484,9 +530,32 @@ def enrich_album(client, album, release_groups):
             genres[genre["name"]] += genre.get("count", 0)
         links = [(FacetKind.GENRE, name, "", "", count)
                  for name, count in _top_genres([{"name": n, "count": c} for n, c in genres.items()])]
-        links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], 0) for credit in credits]
+        links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], credit.get("count", 0)) for credit in credits]
         link_facets(AlbumFacet, "album", album, links)
+    inherit_artist_tags(album)
     return True
+
+
+INHERITED = "from artist"
+
+
+def inherit_artist_tags(album):
+    """Give an album the artist's genres as its own genre links (so the genre pages list it).
+
+    No network. An album's own genres are never replaced; genres copied earlier are
+    refreshed when the artist's change. The *tag* columns are never touched: what the
+    pages show is rebuilt from tags + enrichment by services/resolver.py.
+    """
+    genres = list(
+        ArtistFacet.objects.filter(artist=album.artist, source=SOURCE, facet__kind=FacetKind.GENRE)
+        .select_related("facet").order_by("-weight", "facet__name")
+    )
+    own = AlbumFacet.objects.filter(album=album, facet__kind=FacetKind.GENRE).exclude(detail=INHERITED)
+    if not own.exists():
+        AlbumFacet.objects.filter(album=album, facet__kind=FacetKind.GENRE, detail=INHERITED).delete()
+        link_facets(AlbumFacet, "album", album, [
+            (FacetKind.GENRE, link.facet.name, "", INHERITED, link.weight) for link in genres
+        ])
 
 
 def _richest_release(client, release_group_id, tries=3):
@@ -512,18 +581,21 @@ def _credits(release):
 
     credits = {}
 
-    def add(kind, name, role, mbid=""):
+    def add(kind, name, role, mbid="", **extra):
         key = (kind, name.casefold())
         entry = credits.setdefault(key, {"kind": str(kind), "name": name, "mbid": mbid, "roles": []})
         if role and role not in entry["roles"]:
             entry["roles"].append(role)
+        for field_name, value in extra.items():
+            entry[field_name] = value or entry.get(field_name, 0 if field_name == "count" else "")
 
     for relation in relations:
         relation_type = relation.get("type", "")
         attributes = [a for a in relation.get("attributes") or [] if a not in NOT_INSTRUMENTS]
         if relation.get("target-type") == "place" and relation_type in PLACE_CREDIT_TYPES:
             place = relation.get("place") or {}
-            add(FacetKind.STUDIO, place.get("name", ""), PLACE_CREDIT_TYPES[relation_type], place.get("id", ""))
+            add(FacetKind.STUDIO, place.get("name", ""), PLACE_CREDIT_TYPES[relation_type], place.get("id", ""),
+                area=(place.get("area") or {}).get("name", ""))
         elif relation.get("target-type") == "artist" and relation_type in ARTIST_CREDIT_TYPES:
             person = relation.get("artist") or {}
             kind, role = ARTIST_CREDIT_TYPES[relation_type]
@@ -533,6 +605,30 @@ def _credits(release):
                     add(kind, person.get("name", ""), _clean_instrument(attribute), person.get("id", ""))
             else:
                 add(kind, person.get("name", ""), role, person.get("id", ""))
+    # Writers sit on the works the recordings perform; count the works each person wrote.
+    written = {FacetKind.COMPOSER: Counter(), FacetKind.LYRICIST: Counter()}
+    names = {}
+    seen_works = set()
+    for medium in release.get("media") or []:
+        for track in medium.get("tracks") or []:
+            for relation in (track.get("recording") or {}).get("relations") or []:
+                work = relation.get("work") if relation.get("target-type") == "work" else None
+                if not work or work.get("id") in seen_works:
+                    continue
+                seen_works.add(work.get("id"))
+                for part in work.get("relations") or []:
+                    person = part.get("artist") or {}
+                    if part.get("target-type") != "artist" or not person.get("name"):
+                        continue
+                    kinds = {"composer": [FacetKind.COMPOSER], "lyricist": [FacetKind.LYRICIST],
+                             "writer": [FacetKind.COMPOSER, FacetKind.LYRICIST]}.get(part.get("type"), [])
+                    for kind in kinds:
+                        written[kind][person["name"]] += 1
+                        names[person["name"]] = person.get("id", "")
+    for kind, counter in written.items():
+        for name, count in counter.items():
+            add(kind, name, kind.label.lower(), names[name], count=count)
+
     for label_info in release.get("label-info") or []:
         label = label_info.get("label") or {}
         if label.get("name"):
@@ -540,7 +636,8 @@ def _credits(release):
 
     order = [kind.value for kind in FacetKind]
     return [
-        {"kind": entry["kind"], "name": entry["name"], "mbid": entry["mbid"], "role": ", ".join(entry["roles"])}
+        {"kind": entry["kind"], "name": entry["name"], "mbid": entry["mbid"], "role": ", ".join(entry["roles"]),
+         "area": entry.get("area", ""), "count": entry.get("count", 0)}
         for entry in sorted(credits.values(), key=lambda e: (order.index(e["kind"]), e["name"].casefold()))
         if entry["name"]
     ]
