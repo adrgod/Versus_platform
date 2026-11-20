@@ -12,3 +12,4 @@ db/tag_write_logs/
 db/musicbrainz_cache/
 db/lrclib_cache/
 test-data
+.claude/
