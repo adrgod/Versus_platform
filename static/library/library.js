@@ -194,6 +194,21 @@
     }
   };
 
+  const transportButtons = {
+    play: document.querySelector('[data-player-action="play"]'),
+    pause: document.querySelector('[data-player-action="pause"]'),
+    stop: document.querySelector('[data-player-action="stop"]'),
+  };
+  const syncTransport = () => {
+    const playing = Boolean(audio.src) && !audio.paused && !audio.ended;
+    const started = Boolean(audio.src) && audio.currentTime > 0;
+    if (transportButtons.play) transportButtons.play.disabled = playing;
+    if (transportButtons.pause) transportButtons.pause.disabled = !playing;
+    if (transportButtons.stop) transportButtons.stop.disabled = !(playing || started);
+  };
+  ["play", "playing", "pause", "ended", "emptied", "loadstart", "seeked", "error"].forEach((name) => audio.addEventListener(name, syncTransport));
+  syncTransport();
+
   document.addEventListener("click", async (event) => {
     const queueTrackButton = event.target.closest("[data-queue-track]");
     if (queueTrackButton) {

@@ -3,7 +3,7 @@
 The annotations expose the attribute names the templates already use
 (album_id, track_name, release_year, ...), so the templates stay unchanged.
 """
-from django.db.models import Avg, Count, F, Q
+from django.db.models import Avg, Count, F, Q, Sum
 from django.db.models.functions import Lower
 
 from .models import Album, AlbumProfile, Artist, ArtistProfile, Track
@@ -29,6 +29,7 @@ def albums(track_filter=None, *, tag_year_only=False):
         disc_number=F("album_discnumber"),
         artist_name=F("artist__artist_name"),
         track_count=Count("track"),
+        length_seconds=Sum("track__track_duration"),
     )
 
 

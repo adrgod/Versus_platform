@@ -479,15 +479,67 @@ def artist_detail(request, artist_id):
 	})
 
 
+ALBUM_SORTS = [
+	("artist", "Artist name"),
+	("album", "Album name"),
+	("tracks", "Number of tracks"),
+	("length", "Album length"),
+]
+
+
+def _number(value, kind=int):
+	"""A positive number from a query-string value, or None."""
+	try:
+		number = kind(str(value).strip().replace(",", "."))
+	except (TypeError, ValueError):
+		return None
+	return number if number >= 0 else None
+
+
 @login_required
 def album_list(request):
-	search = request.GET.get("q", "").strip()
-	rows = (
-		queries.albums()
-		.filter(Q(album_name__icontains=search) | Q(artist__artist_name__icontains=search))
-		.order_by(*queries.album_order())[:500]
-	)
-	return render(request, "library/album_list.html", {"albums": _with_covers(rows), "search": search})
+	get = request.GET
+	search = get.get("q", "").strip()
+	sort = get.get("sort") if get.get("sort") in dict(ALBUM_SORTS) else "artist"
+	descending = get.get("dir") == "desc"
+	batch, country, year = get.get("batch", ""), get.get("country", ""), get.get("year", "")
+	tracks_min, tracks_max = _number(get.get("tracks_min")), _number(get.get("tracks_max"))
+	minutes_min, minutes_max = _number(get.get("minutes_min"), float), _number(get.get("minutes_max"), float)
+
+	rows = queries.albums().filter(Q(album_name__icontains=search) | Q(artist__artist_name__icontains=search))
+	if batch:
+		rows = rows.filter(album_batch_date=batch) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", batch) else rows.none()
+	if country:
+		rows = rows.filter(resolved_country=country)
+	if year.isdigit():
+		rows = rows.filter(resolved_year=int(year))
+	if tracks_min is not None:
+		rows = rows.filter(track_count__gte=tracks_min)
+	if tracks_max is not None:
+		rows = rows.filter(track_count__lte=tracks_max)
+	if minutes_min is not None:
+		rows = rows.filter(length_seconds__gte=minutes_min * 60)
+	if minutes_max is not None:
+		rows = rows.filter(length_seconds__lte=minutes_max * 60)
+
+	key = {"artist": Lower("artist__artist_name"), "album": Lower("album_name"),
+		"tracks": F("track_count"), "length": F("length_seconds")}[sort]
+	first = key.desc(nulls_last=True) if descending else key.asc(nulls_last=True) if sort == "length" else key.asc()
+	rows = rows.order_by(first, *queries.album_order())[:500]
+
+	choices = Album.objects.all()
+	batches = [day for day in choices.exclude(album_batch_date=None).values_list("album_batch_date", flat=True).distinct().order_by("-album_batch_date")]
+	countries = list(choices.exclude(resolved_country="").values_list("resolved_country", flat=True).distinct().order_by("resolved_country"))
+	years = list(choices.exclude(resolved_year=None).values_list("resolved_year", flat=True).distinct().order_by("-resolved_year"))
+	filters_on = any([batch, country, year, tracks_min is not None, tracks_max is not None,
+		minutes_min is not None, minutes_max is not None])
+	return render(request, "library/album_list.html", {
+		"albums": _with_covers(rows), "search": search, "sort": sort, "descending": descending,
+		"sorts": ALBUM_SORTS, "batches": batches, "countries": countries, "years": years,
+		"batch": batch, "country": country, "year": year, "filters_on": filters_on,
+		"tracks_min": get.get("tracks_min", ""), "tracks_max": get.get("tracks_max", ""),
+		"minutes_min": get.get("minutes_min", ""), "minutes_max": get.get("minutes_max", ""),
+	})
 
 
 CREDIT_CELL_LABELS = [

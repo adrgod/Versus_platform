@@ -24,6 +24,20 @@ def flag(country):
 
 
 @register.filter
+def clock(seconds):
+    """Seconds -> "42:10" or "1:12:30"; nothing when unknown."""
+    try:
+        total = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+@register.filter
 def get_item(mapping, key):
     """mapping[key], or 0 when missing (used for the user's star ratings)."""
     try:

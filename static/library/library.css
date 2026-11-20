@@ -1014,3 +1014,13 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .folder-roots, .folder-goto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
 .folder-roots .is-current { border-color: var(--accent); color: var(--accent-text); }
 .folder-goto input { flex: 1 1 260px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+
+.filter-field .range-inputs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.filter-field input[type="number"] { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-muted); color: var(--ink); font: inherit; font-size: 13px; letter-spacing: 0; text-transform: none; }
+.filter-field input[type="number"]:hover { border-color: var(--accent-border); }
+.filter-field input[type="number"]:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.filter-field input[type="number"]:not(:placeholder-shown) { border-color: var(--accent-border); background-color: var(--accent-soft); font-weight: 600; }
+.filter-field .range-inputs i { font-style: normal; color: var(--subtle); }
+
+.icon-button:disabled, .icon-button:disabled:hover { opacity: .35; cursor: not-allowed; background: transparent; color: var(--dock-muted); }
+.icon-button[data-player-action="play"]:disabled, .icon-button[data-player-action="play"]:disabled:hover { color: var(--dock-muted); background: rgba(255, 255, 255, .22); }
