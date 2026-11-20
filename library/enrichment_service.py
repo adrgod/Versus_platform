@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from django.db import connection
 from django.utils import timezone
 
-from .services import fill_missing, insights
+from .services import discogs, fill_missing, insights, metal_archives
 from .services.enrichment import EnrichmentStats, enrich_library
 
 
@@ -35,11 +35,15 @@ JOB_LABELS = {
     "musicbrainz": "Lookup Details Online",
     "notes": "Enrich Data with AI",
     "fill": "Fill in Missing Data",
+    "metal": "Lookup on Metal Archives",
+    "discogs": "Lookup on Discogs",
 }
 RUNNERS = {
     "musicbrainz": (enrich_library, EnrichmentStats),
     "notes": (insights.run, insights.InsightStats),
     "fill": (fill_missing.run, fill_missing.FillStats),
+    "metal": (metal_archives.run, metal_archives.MetalStats),
+    "discogs": (discogs.run, discogs.DiscogsStats),
 }
 _lock = threading.Lock()
 _jobs = {}

@@ -4,9 +4,11 @@ from django.db import migrations, models
 
 
 def backfill(apps, schema_editor):
-    """Undo the earlier copy of artist genres into the genre *tag* column, then resolve everything."""
+    """Undo the earlier copy of artist genres into the genre *tag* column.
+
+    Resolving every value happens at the end of 0012: the resolver reads tables that later migrations create.
+    """
     from library.models import Album, AlbumFacet
-    from library.services import resolver
 
     for album in Album.objects.exclude(album_genre=""):
         inherited = list(
@@ -20,7 +22,6 @@ def backfill(apps, schema_editor):
             names.append(name)
         if names and album.album_genre == ", ".join(names):
             Album.objects.filter(pk=album.pk).update(album_genre="")
-    resolver.resolve_all()
 
 
 class Migration(migrations.Migration):

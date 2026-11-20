@@ -155,6 +155,55 @@ class AlbumProfile(models.Model):
     enriched_at = models.DateTimeField(null=True, blank=True)
 
 
+class MetalArchivesArtist(models.Model):
+    """What Metal Archives (metal-archives.com) says about a band. Kept apart from the MusicBrainz profile."""
+
+    artist = models.OneToOneField(Artist, on_delete=models.CASCADE, related_name="metal_archives")
+    ma_id = models.IntegerField(null=True, blank=True)
+    url = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=20, choices=EnrichmentStatus.choices, blank=True, default="")
+    note = models.CharField(max_length=300, blank=True)
+    name = models.CharField(max_length=200, blank=True)
+    country = models.CharField(max_length=100, blank=True)
+    location = models.CharField(max_length=200, blank=True)
+    formed_year = models.IntegerField(null=True, blank=True)
+    band_status = models.CharField(max_length=30, blank=True)
+    genre_text = models.CharField(max_length=300, blank=True)
+    label = models.CharField(max_length=100, blank=True)
+    enriched_at = models.DateTimeField(null=True, blank=True)
+
+
+class MetalArchivesAlbum(models.Model):
+    """What Metal Archives says about an album (a release of the matched band)."""
+
+    album = models.OneToOneField(Album, on_delete=models.CASCADE, related_name="metal_archives")
+    ma_id = models.IntegerField(null=True, blank=True)
+    url = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=20, choices=EnrichmentStatus.choices, blank=True, default="")
+    note = models.CharField(max_length=300, blank=True)
+    title = models.CharField(max_length=300, blank=True)
+    release_type = models.CharField(max_length=30, blank=True)
+    release_date = models.CharField(max_length=40, blank=True)
+    release_year = models.IntegerField(null=True, blank=True)
+    label = models.CharField(max_length=100, blank=True)
+    enriched_at = models.DateTimeField(null=True, blank=True)
+
+
+class DiscogsAlbum(models.Model):
+    """What Discogs says about an album: the matched release, its credits, year and label."""
+
+    album = models.OneToOneField(Album, on_delete=models.CASCADE, related_name="discogs")
+    release_id = models.IntegerField(null=True, blank=True)
+    url = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=20, choices=EnrichmentStatus.choices, blank=True, default="")
+    note = models.CharField(max_length=300, blank=True)
+    title = models.CharField(max_length=300, blank=True)
+    release_year = models.IntegerField(null=True, blank=True)
+    label = models.CharField(max_length=100, blank=True)
+    credits = models.JSONField(default=list, blank=True)  # same shape as AlbumProfile.credits
+    enriched_at = models.DateTimeField(null=True, blank=True)
+
+
 class FacetKind(models.TextChoices):
     GENRE = "genre", "Genre"
     MEMBER = "member", "Band member"

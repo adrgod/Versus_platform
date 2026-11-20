@@ -923,3 +923,4 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .fill-form { display: flex; align-items: center; gap: 12px; }
 .fill-form small { color: var(--muted); font-size: 12px; }
 .completion-tree { margin-top: 4px; }
+.quiet-note { margin: 6px 0 0; font-size: 13px; color: var(--muted, inherit); }

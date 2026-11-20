@@ -532,7 +532,28 @@ def enrich_album(client, album, release_groups):
                  for name, count in _top_genres([{"name": n, "count": c} for n, c in genres.items()])]
         links += [(credit["kind"], credit["name"], credit.get("mbid", ""), credit["role"], credit.get("count", 0)) for credit in credits]
         link_facets(AlbumFacet, "album", album, links)
+    fill_cover(client, album, group["id"])
     inherit_artist_tags(album)
+    return True
+
+
+def fill_cover(client, album, release_group_id):
+    """Give an album without a cover the front cover the Cover Art Archive has for it.
+
+    A cover from the MP3 tags or the album folder is never replaced, and a missing or
+    unreachable archive never fails the album's lookup. Returns True when a cover was added.
+    """
+    fetch = getattr(client, "front_cover", None)
+    if fetch is None or Album.objects.filter(pk=album.pk).exclude(album_cover__isnull=True).exclude(album_cover=b"").exists():
+        return False
+    try:
+        image = fetch(release_group_id)
+    except Exception:  # offline, archive busy...: the details are still stored
+        return False
+    if not image:
+        return False
+    Album.objects.filter(pk=album.pk).update(album_cover=image)
+    album.album_cover = image
     return True
 
 

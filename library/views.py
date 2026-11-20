@@ -24,7 +24,7 @@ from mutagen.easyid3 import EasyID3
 
 from . import enrichment_service, queries, repository
 from .models import (
-	Album, AlbumCredit, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, ArtistFacet, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, LibraryState, Track,
+	Album, AlbumCredit, AlbumDocument, AlbumFacet, AlbumInsight, AlbumProfile, Artist, ArtistFacet, TrackLyrics, ArtistProfile, EnrichmentStatus, FacetKind, DiscogsAlbum, LibraryState, MetalArchivesAlbum, MetalArchivesArtist, Track,
 )
 from .scan_service import is_importing, read_local_tags, start_scan
 from .services.files_scanner import (
@@ -34,6 +34,7 @@ from .services.files_scanner import (
 	read_file_metadata,
 )
 from .services import enrichment as enrichment_api
+from .services import discogs as discogs_service
 from .services import explorer, fill_missing
 from .services import resolver as resolver_api
 from .services import insights as insights_api
@@ -434,6 +435,7 @@ def artist_detail(request, artist_id):
 		"country": country,
 		"country_url": facet_url("country", country) if country else None,
 		"formed": artist.resolved_formed_year,
+		"metal_url": _metal_url(MetalArchivesArtist, artist=artist),
 		"job": job,
 		"job_here": _job_is_about(job, artist_id=artist.pk),
 		"importing": is_importing(),
@@ -543,6 +545,8 @@ def album_detail(request, album_id):
 		"lyric_themes": chips.get(FacetKind.LYRIC_THEME, []),
 		"documents": AlbumDocument.objects.filter(album_id=album_id).order_by("file_path"),
 		"lyric_tracks": lyric_tracks,
+		"metal_url": _metal_url(MetalArchivesAlbum, album_id=album_id),
+		"discogs_url": _metal_url(DiscogsAlbum, album_id=album_id),
 		"job": job,
 		"job_here": _job_is_about(job, artist_id=album.artist_id, album_id=album_id),
 		"importing": is_importing(),
@@ -1181,6 +1185,9 @@ def enrichment_status(request):
 		"failed_albums": failed_albums,
 		"job": enrichment_service.get_job("musicbrainz"),
 		"notes_job": enrichment_service.get_job("notes"),
+		"metal_job": enrichment_service.get_job("metal"),
+		"discogs_job": enrichment_service.get_job("discogs"),
+		"discogs_token_set": bool(discogs_service.configured_token()),
 		"running": enrichment_service.running_job(),
 		"notes_counts": {
 			"albums": Album.objects.count(),
@@ -1219,6 +1226,48 @@ def enrichment_start(request):
 		refresh=request.POST.get("refresh") == "1", artist_ids=artist_ids, album_ids=album_ids
 	):
 		messages.success(request, "Lookup Details Online started.")
+	else:
+		_job_busy(request)
+	return _redirect_to_scope(album_id, artist_id)
+
+
+def _metal_url(model, **owner):
+	"""The Metal Archives page this artist or album was matched to, or "" when not matched."""
+	entry = model.objects.filter(status=EnrichmentStatus.MATCHED, **owner).first()
+	return entry.url if entry else ""
+
+
+@login_required
+@require_POST
+def metal_start(request):
+	"""Lookup on Metal Archives for all artists, one artist or one album."""
+	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
+	options = {"refresh": request.POST.get("refresh") == "1"}
+	if album_id.isdigit():
+		options["album_ids"] = [int(album_id)]
+	elif artist_id.isdigit():
+		options["artist_ids"] = [int(artist_id)]
+	if enrichment_service.start_job("metal", **options):
+		messages.success(request, "Lookup on Metal Archives started.")
+	else:
+		_job_busy(request)
+	return _redirect_to_scope(album_id, artist_id)
+
+
+@login_required
+@require_POST
+def discogs_start(request):
+	"""Lookup on Discogs for all albums, one artist's albums or one album."""
+	album_id, artist_id = request.POST.get("album_id", ""), request.POST.get("artist_id", "")
+	options = {"refresh": request.POST.get("refresh") == "1"}
+	if album_id.isdigit():
+		options["album_ids"] = [int(album_id)]
+	elif artist_id.isdigit():
+		options["artist_ids"] = [int(artist_id)]
+	if not discogs_service.configured_token():
+		messages.error(request, 'Lookup on Discogs needs a free access token: set the DISCOGS_TOKEN environment variable (or "discogs_token" under "enrichment" in config.json; create one at discogs.com/settings/developers).')
+	elif enrichment_service.start_job("discogs", **options):
+		messages.success(request, "Lookup on Discogs started.")
 	else:
 		_job_busy(request)
 	return _redirect_to_scope(album_id, artist_id)

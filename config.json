@@ -6,7 +6,8 @@
     "allowed_library_roots": ["/"],
     "enrichment": {
         "user_agent": "VersusLibrary/0.1 ( replace-with-your-email-or-project-url )",
-        "cache_days": 30
+        "cache_days": 30,
+        "discogs_token": "LvYfoQFucQqfJrlouLAkKxPeUCuYfrNJCcxXmSNd"
     },
     "insights": {
         "ollama_url": "http://localhost:11434",

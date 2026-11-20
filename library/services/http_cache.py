@@ -29,6 +29,7 @@ class CachedJsonClient:
     min_interval = 1.0
     cache_name = "http_cache"
     error_class = ServiceError
+    accept = "application/json"
 
     _lock = threading.Lock()
     _last_request = {}
@@ -55,13 +56,14 @@ class CachedJsonClient:
         return data
 
     def _fetch(self, url):
-        request = urllib.request.Request(url, headers={"User-Agent": self.user_agent, "Accept": "application/json"})
+        headers = {"User-Agent": self.user_agent, "Accept": self.accept, **self.extra_headers()}
+        request = urllib.request.Request(url, headers=headers)
         for attempt in range(1, MAX_ATTEMPTS + 1):
             self._wait_turn()
             self.request_count += 1
             try:
                 with urllib.request.urlopen(request, timeout=30) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    return self._decode(response.read())
             except urllib.error.HTTPError as error:
                 if error.code == 404:
                     return None
@@ -75,6 +77,14 @@ class CachedJsonClient:
                     continue
                 raise self.error_class(f"Could not reach {self.service_name}: {error}") from error
         raise self.error_class(f"{self.service_name} stayed busy for {url}")
+
+    def extra_headers(self):
+        """Headers a service needs besides User-Agent and Accept (an API token, say)."""
+        return {}
+
+    def _decode(self, raw):
+        """Turn a response body into the value that is cached (JSON here; subclasses may differ)."""
+        return json.loads(raw.decode("utf-8"))
 
     def _wait_turn(self):
         key = type(self).__name__

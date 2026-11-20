@@ -15,8 +15,8 @@ from library.models import (
 from library.services.local_credits import SOURCE_LABELS as _LABELS
 
 INHERITED = "from artist"  # AlbumFacet.detail of a genre copied from the artist
-SOURCE_LABELS = {**_LABELS, "filename": "File name"}
-CREDIT_SOURCES = ("musicbrainz", "tags", "notes")
+SOURCE_LABELS = {**_LABELS, "filename": "File name", "metal-archives": "Metal Archives", "discogs": "Discogs"}
+CREDIT_SOURCES = ("musicbrainz", "discogs", "tags", "notes")
 CHUNK = 400
 
 
@@ -56,24 +56,29 @@ def _set(obj, **values):
 # -- artists ---------------------------------------------------------------------
 
 def resolve_artists(artist_ids=None):
-    artists = Artist.objects.select_related("profile")
+    artists = Artist.objects.select_related("profile", "metal_archives")
     if artist_ids is not None:
         artists = artists.filter(pk__in=artist_ids)
     result = []
     for artist in artists:
         artist._resolved_changed = False
         profile = getattr(artist, "profile", None)
+        metal = getattr(artist, "metal_archives", None)
         sources = {}
         if artist.artist_country:
             country, sources["country"] = artist.artist_country, "tags"
         elif _matched(profile) and profile.country:
             country, sources["country"] = profile.country, "musicbrainz"
+        elif _matched(metal) and metal.country:
+            country, sources["country"] = metal.country, "metal-archives"
         else:
             country = ""
         if artist.artist_formed_year:
             formed, sources["formed_year"] = artist.artist_formed_year, "tags"
         elif _matched(profile) and profile.begin_year:
             formed, sources["formed_year"] = profile.begin_year, "musicbrainz"
+        elif _matched(metal) and metal.formed_year:
+            formed, sources["formed_year"] = metal.formed_year, "metal-archives"
         else:
             formed = None
         _set(artist, resolved_country=country, resolved_formed_year=formed, resolved_sources=sources)
@@ -88,7 +93,7 @@ def _first_year(text):
 
 
 def resolve_albums(album_ids=None):
-    albums = Album.objects.select_related("artist", "profile", "insight")
+    albums = Album.objects.select_related("artist", "profile", "insight", "metal_archives", "discogs")
     if album_ids is not None:
         albums = albums.filter(pk__in=album_ids)
     albums = list(albums)
@@ -115,18 +120,24 @@ def resolve_albums(album_ids=None):
         for chunk in _chunks(artist_ids)
         for artist in Artist.objects.filter(pk__in=chunk).select_related("profile")
     }
-    artist_genres = {}
+    artist_genres = {}  # artist -> (source, [genre names]); MusicBrainz's genres win over other sources'
     from library.models import ArtistFacet
+    by_source = {}
     for chunk in _chunks(artist_ids):
-        for artist_id, name in (
+        for artist_id, source, name in (
             ArtistFacet.objects.filter(artist_id__in=chunk, facet__kind=FacetKind.GENRE)
-            .order_by("-weight", "facet__name").values_list("artist_id", "facet__name")
+            .order_by("-weight", "facet__name").values_list("artist_id", "source", "facet__name")
         ):
-            artist_genres.setdefault(artist_id, []).append(name)
+            by_source.setdefault(artist_id, {}).setdefault(source, []).append(name)
+    for artist_id, sources_found in by_source.items():
+        source = "musicbrainz" if "musicbrainz" in sources_found else sorted(sources_found)[0]
+        artist_genres[artist_id] = (source, sources_found[source])
 
     for album in albums:
         album._resolved_changed = False
         profile, insight = getattr(album, "profile", None), getattr(album, "insight", None)
+        metal = getattr(album, "metal_archives", None)
+        discogs = getattr(album, "discogs", None)
         artist = artist_state[album.artist_id]
         artist_profile = getattr(artist, "profile", None)
         sources = {}
@@ -136,19 +147,26 @@ def resolve_albums(album_ids=None):
             year, sources["year"] = album.album_release_year, "tags"
         elif _matched(profile) and profile.release_year:
             year, sources["year"] = profile.release_year, "musicbrainz"
+        elif _matched(metal) and metal.release_year:
+            year, sources["year"] = metal.release_year, "metal-archives"
+        elif _matched(discogs) and discogs.release_year:
+            year, sources["year"] = discogs.release_year, "discogs"
         elif notes_year:
             year, sources["year"] = notes_year, "notes"
         else:
             year = None
 
         own = [name for name, inherited in genres.get(album.pk, []) if not inherited]
-        borrowed = [name for name, inherited in genres.get(album.pk, []) if inherited] or artist_genres.get(album.artist_id, [])
+        inherited_names = [name for name, inherited in genres.get(album.pk, []) if inherited]
+        artist_source, artist_names = artist_genres.get(album.artist_id, ("musicbrainz", []))
+        borrowed = inherited_names or artist_names
+        borrowed_source = "musicbrainz" if inherited_names else artist_source
         if album.album_genre:
             genre, sources["genre"] = album.album_genre, "tags"
         elif own:
             genre, sources["genre"] = ", ".join(own), "musicbrainz"
         elif borrowed:
-            genre, sources["genre"] = ", ".join(borrowed[:4]), "artist:musicbrainz"
+            genre, sources["genre"] = ", ".join(borrowed[:4]), f"artist:{borrowed_source}"
         else:
             genre = ""
 
@@ -158,6 +176,10 @@ def resolve_albums(album_ids=None):
             label, sources["label"] = album.album_publisher, "tags"
         elif labels.get(album.pk):
             label, sources["label"] = labels[album.pk][0], "musicbrainz"
+        elif _matched(metal) and metal.label:
+            label, sources["label"] = metal.label, "metal-archives"
+        elif _matched(discogs) and discogs.label:
+            label, sources["label"] = discogs.label, "discogs"
         elif notes_label:
             label, sources["label"] = notes_label, "notes"
         else:
@@ -174,6 +196,7 @@ def resolve_albums(album_ids=None):
             [row for row in credit_rows.get(album.pk, []) if row.source == AlbumCredit.SOURCE_TAGS],
             [row for row in credit_rows.get(album.pk, []) if row.source == AlbumCredit.SOURCE_NOTES],
             artist.artist_name, members,
+            discogs=discogs.credits if _matched(discogs) else [],
         )
         _set(album, resolved_year=year, resolved_genre=genre[:200], resolved_label=label[:100],
              resolved_country=country, resolved_credits=credits, resolved_sources=sources)
@@ -188,7 +211,7 @@ CELL_KINDS = {
 }
 
 
-def build_credits(musicbrainz, tag_rows, note_rows, artist_name, members):
+def build_credits(musicbrainz, tag_rows, note_rows, artist_name, members, discogs=()):
     """{"composer": {"source": "tags", "entries": [{"name", "detail", "evidence"}]}, ...}
 
     Each cell comes from the first source that has something for it. The main composer and
@@ -199,6 +222,7 @@ def build_credits(musicbrainz, tag_rows, note_rows, artist_name, members):
 
     by_source = {
         "musicbrainz": [dict(c) for c in musicbrainz],
+        "discogs": [dict(c) for c in discogs],
         "tags": [{"kind": r.kind, "name": r.name, "role": r.detail, "area": "", "count": r.count, "evidence": r.evidence} for r in tag_rows],
         "notes": [{"kind": r.kind, "name": r.name, "role": r.detail, "area": "", "count": r.count, "evidence": r.evidence} for r in note_rows],
     }

@@ -13,3 +13,7 @@ db/musicbrainz_cache/
 db/lrclib_cache/
 test-data
 .claude
+db/metal_archives_cache/
+
+db/discogs_cache/
+config.json

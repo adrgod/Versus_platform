@@ -5,6 +5,7 @@ User-Agent with contact details and to stay under one request per second. The
 client keeps to that, retries when the server says it is busy, and caches JSON
 responses on disk so repeated enrichment runs do not ask for the same data again.
 """
+from library.services.coverart import CoverArtClient
 from library.services.http_cache import CachedJsonClient, ServiceError
 
 BASE_URL = "https://musicbrainz.org/ws/2/"
@@ -61,3 +62,9 @@ class MusicBrainzClient(CachedJsonClient):
             f"release/{mbid}",
             inc="artist-rels+place-rels+labels+recordings+recording-level-rels+work-rels+work-level-rels+genres",
         )
+
+    def front_cover(self, release_group_mbid):
+        """Front cover bytes from the Cover Art Archive (None when it has none)."""
+        if not hasattr(self, "_cover_client"):
+            self._cover_client = CoverArtClient(user_agent=self.user_agent)
+        return self._cover_client.front_cover(release_group_mbid)

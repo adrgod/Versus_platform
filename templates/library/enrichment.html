@@ -31,6 +31,32 @@
 </section>
 <p class="security-note">MusicBrainz allows about one request a second, so a first run takes roughly 3–5 seconds per album. Answers are cached in <code>db/musicbrainz_cache</code>, so later runs are quick. From a terminal: <code>python manage.py enrich_library</code>.</p>
 
+<section class="genre-section metal-lookup" aria-label="Metal Archives">
+  <div class="section-heading"><div><span class="eyebrow">METAL-ARCHIVES.COM · COUNTRY · FORMED · GENRE · LABEL · YEAR · COVER</span><h2>Lookup on Metal Archives</h2></div>
+    {% if not running %}<div class="heading-actions">
+      <form method="post" action="{% url 'library:metal-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="globe" %}Lookup on Metal Archives</button></form>
+      <form method="post" action="{% url 'library:metal-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every artist up again, even ones already matched">Redo for all artists</button></form>
+    </div>{% endif %}
+  </div>
+  <p class="security-note"><a class="link-button" href="https://www.metal-archives.com" rel="noreferrer" target="_blank">Metal Archives</a> has no official API, so this reads its public pages, one request every two seconds, and keeps the answers in <code>db/metal_archives_cache</code>. Run it on metal artists: it only fills what tags and MusicBrainz left empty, and never replaces an existing cover. Or use the button on one artist or album page.</p>
+  {% if metal_job %}<p class="scan-state"{% if metal_job.running %} data-poll="3000"{% endif %}><span class="status-dot {% if metal_job.running %}status-scanning{% elif metal_job.error %}status-failed{% endif %}"></span><span>{% if metal_job.running %}Running{% if metal_job.stats.current %} · {{ metal_job.stats.current }}{% endif %}{% elif metal_job.error %}Stopped: {{ metal_job.error }}{% else %}Finished {{ metal_job.finished|date:"j M Y, H:i" }}{% endif %} · {{ metal_job.stats.artists_done }} / {{ metal_job.stats.artists_total }} artists · {{ metal_job.stats.artists_matched }} matched · {{ metal_job.stats.albums_matched }} albums · {{ metal_job.stats.covers_added }} covers added</span><small>{{ metal_job.stats.artists_not_found }} artists · {{ metal_job.stats.albums_not_found }} albums without a match</small></p>
+  {% if metal_job.stats.errors %}<details class="scan-errors"><summary>{{ metal_job.stats.errors|length }} lookup error{{ metal_job.stats.errors|length|pluralize }}</summary><pre>{% for error in metal_job.stats.errors %}{{ error }}
+{% endfor %}</pre></details>{% endif %}{% endif %}
+</section>
+
+<section class="genre-section discogs-lookup" aria-label="Discogs">
+  <div class="section-heading"><div><span class="eyebrow">DISCOGS.COM · PRODUCERS · ENGINEERS · STUDIO · ARTWORK · COMPOSERS · YEAR · LABEL</span><h2>Lookup on Discogs</h2></div>
+    {% if not running %}<div class="heading-actions">
+      <form method="post" action="{% url 'library:discogs-start' %}">{% csrf_token %}<button class="button button-primary" type="submit">{% include "library/_icon.html" with name="globe" %}Lookup on Discogs</button></form>
+      <form method="post" action="{% url 'library:discogs-start' %}">{% csrf_token %}<input type="hidden" name="refresh" value="1"><button class="button button-light" type="submit" title="Look every album up again, even ones already matched">Redo for all albums</button></form>
+    </div>{% endif %}
+  </div>
+  <p class="security-note">Reads the credits of each album from the official <a class="link-button" href="https://www.discogs.com/developers" rel="noreferrer" target="_blank">Discogs API</a>, about one request a second, and keeps the answers in <code>db/discogs_cache</code>. It only fills credit cells, years and labels that tags and MusicBrainz left empty. {% if not discogs_token_set %}<strong>It needs a free access token:</strong> create one at <a class="link-button" href="https://www.discogs.com/settings/developers" rel="noreferrer" target="_blank">discogs.com/settings/developers</a> and start the site with the environment variable <code>DISCOGS_TOKEN</code> set to it (or, if you do not commit <code>config.json</code>, put it there as <code>"discogs_token"</code> under <code>"enrichment"</code>).{% endif %}</p>
+  {% if discogs_job %}<p class="scan-state"{% if discogs_job.running %} data-poll="3000"{% endif %}><span class="status-dot {% if discogs_job.running %}status-scanning{% elif discogs_job.error %}status-failed{% endif %}"></span><span>{% if discogs_job.running %}Running{% if discogs_job.stats.current %} · {{ discogs_job.stats.current }}{% endif %}{% elif discogs_job.error %}Stopped: {{ discogs_job.error }}{% else %}Finished {{ discogs_job.finished|date:"j M Y, H:i" }}{% endif %} · {{ discogs_job.stats.albums_done }} / {{ discogs_job.stats.albums_total }} albums · {{ discogs_job.stats.albums_matched }} matched · {{ discogs_job.stats.credits_found }} credits</span><small>{{ discogs_job.stats.albums_not_found }} albums without a match</small></p>
+  {% if discogs_job.stats.errors %}<details class="scan-errors"><summary>{{ discogs_job.stats.errors|length }} lookup error{{ discogs_job.stats.errors|length|pluralize }}</summary><pre>{% for error in discogs_job.stats.errors %}{{ error }}
+{% endfor %}</pre></details>{% endif %}{% endif %}
+</section>
+
 <section class="genre-section notes-lookup" aria-label="Liner notes, lyrics and facts">
   <div class="section-heading"><div><span class="eyebrow">LINER NOTES · PDFS · LYRICS · LOCAL AI MODEL</span><h2>Enrich Data with AI</h2></div>
     {% if not running %}<div class="heading-actions">
