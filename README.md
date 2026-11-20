@@ -1,9 +1,30 @@
 # Jira Board
 https://adrianogodinho-1792274415428.atlassian.net/jira/software/projects/VSP/boards/2?filter=&groupBy=none
 
-# Online enrichment (MusicBrainz)
+# Actions and their names
 
-`python manage.py enrich_library` (or **Explore → Online lookup** in the app) looks artists and albums up on
+The same four names are used on every page, in messages and in the commands below:
+
+| Action | What it does | Where |
+| --- | --- | --- |
+| **Import Data** | Scans the source folder and brings new music into the catalogue (reads every file's MP3 tags). | Overview |
+| **Edit Tags** | Change tags by hand: album tags plus a table of every track, or an artist's name, country and formed year. Written to the MP3 files on Save. | Artist and album pages |
+| **Read Local MP3 Tags** | Reads the MP3 tags (and folder/file-name details) of one artist's or album's files again. | Artist and album pages |
+| **Lookup Details Online** | Looks artists and albums up on MusicBrainz. | Lookup & Enrich page, artist and album pages |
+| **Enrich Data with AI** | Reads .txt/.nfo/.pdf notes and lyrics, then lets a local AI model extract facts. | Lookup & Enrich page, artist and album pages |
+
+A batch is named after the closest `YYYYMMDD` folder above the files (e.g. "Batch 13 Oct 2026"), whatever
+the layout below it. Empty tags are filled from the folders when the path is
+`YYYYMMDD/LABEL/ARTIST - ALBUM/[CD1/]01 - Title.mp3` (most common; `_-_` also works) or
+`YYYYMMDD/LABEL/ARTIST/ALBUM/[CD1/]01 - Title.mp3`.
+
+When changed tags turn an album or artist into a new catalogue entry (name, year, label or artist changed),
+everything the old entry had is carried over to the new one: online details, AI enrichment, liner notes,
+lyrics, cover, batch and first-loaded date.
+
+# Lookup Details Online (MusicBrainz)
+
+`python manage.py enrich_library` (or **Lookup Details Online** on the **Explore → Lookup & Enrich** page, or on an artist or album page) looks artists and albums up on
 [MusicBrainz](https://musicbrainz.org): free, no API key. Per artist it stores genres, country, formation
 year, line-up with instruments and years, discography (studio albums/EPs with release dates) and rating. Per
 album: genres, first release date, release type, rating, studios, producers, engineers, artwork credits,
@@ -13,13 +34,13 @@ album musicians and label. MP3 tags and the tag-derived columns are never change
 - Options: `--refresh` (look everything up again), `--artist NAME` (repeatable), `--no-cache`.
 - Set `enrichment.user_agent` in `config.json` to include your contact (MusicBrainz asks for it).
 - Rate limit: about 1 request/second, so a first run takes ~3–5 s per album. Answers are cached in `db/musicbrainz_cache/`.
-- Wrong or missing matches can be fixed on the Online lookup page by pasting a MusicBrainz link.
+- Wrong or missing matches can be fixed on the Lookup & Enrich page by pasting a MusicBrainz link.
 - **Explore** (`/explore/`) filters the library by any combination of tags (OR within a group, AND across
   groups). **Decades** (`/explore/decades/`) ranks albums per decade (XXX0–XXX9) by rating.
 
-# Liner notes, lyrics and band history (local model)
+# Enrich Data with AI (liner notes, lyrics and band history, local model)
 
-`python manage.py enrich_notes` (or **Online lookup → Notes, lyrics & story**, or **Read notes & lyrics** on an album page):
+`python manage.py enrich_notes` (or **Enrich Data with AI** on the Lookup & Enrich page, or on an artist or album page):
 
 - Reads `.txt`, `.nfo` and `.pdf` files anywhere in each album folder (above `CD1`/`Disc 2` folders) and
   shows them on the album page. A "Release date: …" line is picked up when the tags have no year.

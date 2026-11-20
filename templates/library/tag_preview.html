@@ -1,8 +1,8 @@
 {% extends "library/base.html" %}
 {% block title %}Review tag changes{% endblock %}
 {% block content %}
-<div class="breadcrumb"><a href="{% url 'library:quality-report' %}">Tag health</a><span>/</span><a href="{% url 'library:edit-tags' track.track_id %}">Edit tags</a><span>/</span>Preview</div>
-<section class="page-heading"><div><span class="eyebrow">ID3 EDITOR / CONFIRM</span><h1>Review changes</h1><p class="subheading">{{ track.track_name }} · {{ track.artist_name }}</p></div></section>
+<div class="breadcrumb"><a href="{% url 'library:quality-report' %}">Tag health</a><span>/</span><a href="{% url 'library:edit-tags' track.track_id %}">Edit Tags</a><span>/</span>Preview</div>
+<section class="page-heading"><div><span class="eyebrow">EDIT TAGS / CONFIRM</span><h1>Review changes</h1><p class="subheading">{{ track.track_name }} · {{ track.artist_name }}</p></div></section>
 {% if changes %}<div class="table-wrap"><table class="data-table"><thead><tr><th>FIELD</th><th>BEFORE</th><th>AFTER</th></tr></thead><tbody>{% for change in changes %}<tr><td class="table-primary">{{ change.field|title }}</td><td class="before-value">{{ change.before|default:"(empty)" }}</td><td class="after-value">{{ change.after|default:"(empty)" }}</td></tr>{% endfor %}</tbody></table></div>
 <div class="preview-warning"><strong>No backup file is kept</strong><span>The file's original tags are held in memory while it is written, and put back automatically if the result does not verify.</span></div>
 <div class="preview-actions"><a class="button button-light" href="{% url 'library:edit-tags' track.track_id %}">Go back</a><form method="post" action="{% url 'library:confirm-tag-edit' track.track_id %}">{% csrf_token %}<input type="hidden" name="preview_token" value="{{ preview_token }}"><button class="button button-primary" type="submit">Save tags</button></form></div>

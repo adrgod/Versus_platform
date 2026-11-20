@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "versus-preview",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/adriano.godinho/Documents/Personal/Versus_platform && PYTHONPATH=/private/tmp/claude-501/-Users-adriano-godinho--claude-spares-spare-USaDxM/5d9fcdaf-a0fd-43f4-9cff-3dce201a035f/scratchpad/preview DJANGO_SETTINGS_MODULE=preview_settings .venv/bin/python manage.py runserver 127.0.0.1:${PORT:-8766} --noreload"],
+      "port": 8766
+    }
+  ]
+}

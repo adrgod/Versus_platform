@@ -6,7 +6,7 @@ from library.services import insights
 
 class Command(BaseCommand):
     help = (
-        "Read liner notes (.txt/.nfo/.pdf in album folders) and lyrics (MP3 tag, lyrics file, LRCLIB), "
+        "Enrich Data with AI: read liner notes (.txt/.nfo/.pdf in album folders) and lyrics (MP3 tag, lyrics file, LRCLIB), "
         "then let a local Ollama model extract keywords, moods, lyric themes and band history."
     )
 

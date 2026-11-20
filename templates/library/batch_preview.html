@@ -2,7 +2,7 @@
 {% block title %}Review file updates{% endblock %}
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:batch-index' %}">Batches</a><span>/</span><a href="{% url 'library:batch-detail' day %}">{{ batch_date|date:"j M Y" }}</a><span>/</span>Preview</div>
-<section class="page-heading"><div><span class="eyebrow">BATCH / FILE UPDATES</span><h1>Review file updates</h1><p class="subheading">{{ changed_count }} of {{ file_count }} file{{ file_count|pluralize }} would change. Only empty tags are filled, and only for files in the YYYYMMDD/PUBLISHER/BAND/ALBUM layout.</p></div></section>
+<section class="page-heading"><div><span class="eyebrow">BATCH / FILE UPDATES</span><h1>Review file updates</h1><p class="subheading">{{ changed_count }} of {{ file_count }} file{{ file_count|pluralize }} would change. Only empty tags are filled, and only for files in a YYYYMMDD/LABEL/ARTIST - ALBUM (or YYYYMMDD/LABEL/ARTIST/ALBUM) folder.</p></div></section>
 {% if counts %}<div class="detail-meta">{% for name, count in counts %}<span>{{ name|upper }} · {{ count }}</span>{% endfor %}</div>{% endif %}
 {% if errors %}<div class="preview-warning"><strong>{{ errors|length }} file{{ errors|length|pluralize }} could not be read</strong><span>{{ errors|join:" · " }}</span></div>{% endif %}
 {% if rows %}

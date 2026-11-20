@@ -7,13 +7,14 @@ from django.db import transaction
 
 from library.services.files_scanner import read_all_metadata
 from library.services.importer import SUPPORTED_MODELS, import_records
+from library.services.carry_over import import_and_carry_over
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Command(BaseCommand):
     help = (
-        "Import metadata from an MP3 file or a folder of MP3s. "
+        "Import Data: read local MP3 tags from an MP3 file or a folder of MP3s into the catalogue. "
         "Rows are matched on the model's unique constraint, so re-running an import "
         "never duplicates them, and a row (and its when_updated) is only written "
         "when a value actually changed."
@@ -59,7 +60,11 @@ class Command(BaseCommand):
         # One transaction for the whole run: all-or-nothing, and a dry run
         # executes the real logic (so the report is accurate) then rolls back.
         with transaction.atomic():
-            stats = import_records(records, model.__name__, on_skip=self._warn_skipped)
+            if model.__name__ == "Track":
+                # Re-tagged files keep their old entry's details (see services.carry_over).
+                stats, _ = import_and_carry_over(records, on_skip=self._warn_skipped)
+            else:
+                stats = import_records(records, model.__name__, on_skip=self._warn_skipped)
             if dry_run:
                 transaction.set_rollback(True)
 

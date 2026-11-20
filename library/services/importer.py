@@ -62,18 +62,27 @@ def clean_blob(value):
     return None
 
 
-def import_records(records, model_name="Track", on_skip=None):
+def import_records(records, model_name="Track", on_skip=None, touched=None):
     """Import scanner records; returns a Counter keyed by (model name, outcome).
 
     ``model_name`` is the deepest model to load: "Artist", "Album" or "Track".
     Parents are created as needed. Records missing what that level requires are
     skipped (``on_skip(record, reason)`` is called) instead of failing the run.
+    When ``touched`` is a set, the primary keys of the tracks matched or created are added to it.
     """
     if model_name not in SUPPORTED_MODELS:
         raise ValueError(f"Unsupported model: {model_name}")
     stats = Counter()
+    imported = set()
     for record in records:
-        _import_record(record, model_name, stats, on_skip)
+        track = _import_record(record, model_name, stats, on_skip)
+        if touched is not None and track is not None:
+            touched.add(track.pk)
+        if track is not None and model_name == "Track":
+            imported.add(track.pk)
+    if imported:
+        from library.services import resolver
+        resolver.resolve_for_tracks(imported)
     return stats
 
 
@@ -130,7 +139,7 @@ def _import_record(record, model_name, stats, on_skip):
     if model_name == "Album":
         return
 
-    _upsert(
+    return _upsert(
         Track,
         identity={
             "album": album,

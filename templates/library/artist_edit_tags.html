@@ -1,0 +1,37 @@
+{% extends "library/base.html" %}
+{% block title %}Edit Tags · {{ artist.artist_name }}{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="{% url 'library:artist-list' %}">Artists</a><span>/</span><a href="{% url 'library:artist-detail' artist.pk %}">{{ artist.artist_name }}</a><span>/</span>Edit Tags</div>
+<form class="tag-editor" method="post" data-tag-editor>{% csrf_token %}<input type="hidden" name="edit_token" value="{{ edit_token }}">
+<section class="page-heading">
+  <div><span class="eyebrow">EDIT TAGS / ARTIST</span><h1>{{ artist.artist_name }}</h1><p class="subheading">Written to all {{ readable_count }} file{{ readable_count|pluralize }} of this artist when you press Save. Album and track tags are edited per album, below.</p></div>
+  <div class="heading-actions"><a class="button button-light" href="{% url 'library:artist-detail' artist.pk %}">Cancel</a><button class="button button-primary" type="submit" data-save {% if importing %}disabled title="Import Data is running"{% endif %}>{% include "library/_icon.html" with name="save" %}Save</button></div>
+</section>
+{% if missing_count %}<div class="preview-warning editor-warning"><strong>{{ missing_count }} file{{ missing_count|pluralize }} not found</strong><span>They are left out. Run Import Data to tidy them up.</span></div>{% endif %}
+
+<section class="editor-card" aria-labelledby="artist-tags-title">
+  <div class="editor-card-head"><div><span class="eyebrow">ARTIST TAGS</span><h2 id="artist-tags-title">Artist details</h2></div><small>Country and formed year are stored in the files too (as ARTIST_COUNTRY and ARTIST_FORMED_YEAR tags), so they survive every Import Data.</small></div>
+  <div class="editor-fields">
+    {% for field in fields %}<label class="editor-field{% if field.error %} has-error{% endif %}">
+      <span>{{ field.label }}</span>
+      <input type="text" name="h-{{ field.key }}" value="{{ field.value }}" data-initial="{{ field.initial }}" placeholder="{% if field.mixed %}Mixed — each file keeps its own{% elif field.suggested %}{{ field.origin }} says: {{ field.suggested }}{% else %}Empty{% endif %}" autocomplete="off" spellcheck="false"{% if field.error %} aria-invalid="true"{% endif %}>
+      <input type="hidden" name="h-{{ field.key }}-initial" value="{{ field.initial }}">
+      {% if field.error %}<small class="cell-error">{{ field.error }}</small>{% elif field.mixed %}<small>Files differ</small>{% elif field.suggested %}<small>Empty in the files · {{ field.origin }} says · <button type="button" class="link-button" data-fill="{{ field.suggested }}">Use “{{ field.suggested }}”</button></small>{% endif %}
+    </label>{% endfor %}
+  </div>
+</section>
+
+<section class="editor-tracks" aria-labelledby="artist-albums-title">
+  <div class="section-heading"><div><span class="eyebrow">ALBUM AND TRACK TAGS</span><h2 id="artist-albums-title">Albums</h2></div></div>
+  <div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Album</th><th>Year</th><th>Tracks</th><th></th></tr></thead>
+    <tbody>{% for album in albums %}<tr><td><span class="table-primary">{{ album.album_name }}</span></td><td>{{ album.release_year|default:"—" }}</td><td>{{ album.track_count }}</td><td class="row-actions"><a class="link-button" href="{% url 'library:album-edit-tags' album.album_id %}">Edit Tags</a></td></tr>{% empty %}<tr><td colspan="4" class="empty-cell">No albums.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<div class="editor-savebar">
+  <span data-change-count>No changes yet</span>
+  <div class="heading-actions"><a class="button button-light" href="{% url 'library:artist-detail' artist.pk %}">Cancel</a><button class="button button-primary" type="submit" data-save {% if importing %}disabled title="Import Data is running"{% endif %}>{% include "library/_icon.html" with name="save" %}Save</button></div>
+</div>
+</form>
+{% endblock %}

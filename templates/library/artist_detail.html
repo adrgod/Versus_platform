@@ -3,8 +3,8 @@
 {% block content %}
 <div class="breadcrumb"><a href="{% url 'library:artist-list' %}">Artists</a><span>/</span>{{ artist.artist_name }}</div>
 <section class="page-heading"><div><span class="eyebrow">ARTIST FILE{% if matched and profile.artist_type %} / {{ profile.artist_type|upper }}{% endif %}</span><h1>{{ artist.artist_name }}</h1><p class="subheading">{{ albums|length }} album{{ albums|length|pluralize }} in this library{% if matched and profile.studio_album_count != None %} · {{ profile.studio_album_count }} studio album{{ profile.studio_album_count|pluralize }} released{% endif %}{% if matched and profile.disambiguation %} · {{ profile.disambiguation }}{% endif %}</p></div>
-  <form method="post" action="{% url 'library:enrichment-start' %}">{% csrf_token %}<input type="hidden" name="artist_id" value="{{ artist.pk }}"><input type="hidden" name="next" value="artist"><button class="button button-light" type="submit" {% if job and job.running %}disabled title="A lookup is running"{% endif %}>{% if profile and profile.status %}Look up again{% else %}Look up online{% endif %}</button></form>
 </section>
+{% include "library/_metadata_actions.html" with scope="artist_id" object_id=artist.pk noun="artist" %}
 
 {% if matched or country or formed %}<section class="fact-strip" aria-label="Artist facts">
   {% if country %}<div><span class="eyebrow">COUNTRY</span><a href="{{ country_url }}">{{ country }}</a>{% if matched and profile.begin_area and profile.begin_area != country %}<small>from {{ profile.begin_area }}</small>{% endif %}</div>{% endif %}
@@ -16,7 +16,7 @@
 
 <section class="genre-section"><div class="section-heading"><div><span class="eyebrow">IN THE LIBRARY</span><h2>Albums</h2></div></div>
 <div class="album-grid">
-{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder">V.</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.release_year|default:"Year unknown" }}</span><small>{{ album.genre|default:"GENRE UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}
+{% for album in albums %}<a class="album-tile" href="{% url 'library:album-detail' album.album_id %}"><div class="cover-frame">{% if album.cover_uri %}<img src="{{ album.cover_uri }}" alt="Cover for {{ album.album_name }}">{% else %}<span class="cover-placeholder" aria-hidden="true">{{ album.album_name|first|upper|default:"♪" }}</span>{% endif %}</div><strong>{{ album.album_name }}</strong><span>{{ album.release_year|default:"Year unknown" }}</span><small>{{ album.genre|default:"GENRE UNKNOWN" }} · {{ album.track_count }} TRACKS</small></a>{% empty %}<div class="empty-state"><h3>No albums</h3></div>{% endfor %}
 </div></section>
 
 {% if lineup %}<section class="genre-section"><div class="section-heading"><div><span class="eyebrow">PERSONNEL</span><h2>Line-up</h2></div></div>
