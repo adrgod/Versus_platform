@@ -191,8 +191,55 @@ class ExtractionTests(InsightTestCase):
         self.run_extraction(client)
         self.assertEqual(len(client.calls), 2)  # notes and lyrics again
 
+    def test_only_documents_included_for_ai_reach_the_model(self):
+        self.run_extraction()  # reads the files
+        AlbumDocument.objects.exclude(file_path__endswith="notes.txt").update(use_for_ai=False)
+        client = FakeOllama()
+        stats = self.run_extraction(client)
+        notes_calls = [call for call in client.calls if "(liner notes) ===" in call]
+        self.assertEqual(len(notes_calls), 1)
+        self.assertIn("notes.txt", notes_calls[0])
+        self.assertNotIn("release.nfo", notes_calls[0])
+        self.assertTrue(any("Include for AI enrichment" in line for _, line in stats.report))
+
+    def test_include_checkbox_is_saved_and_survives_a_reread(self):
+        self.run_extraction()
+        document = AlbumDocument.objects.first()
+        user = get_user_model().objects.create_user("lister", password="x")
+        client = Client()
+        client.force_login(user)
+        reply = client.post(reverse("library:document-include", args=[document.pk]),
+                            data='{"include": false}', content_type="application/json")
+        self.assertEqual(reply.status_code, 200)
+        document.refresh_from_db()
+        self.assertFalse(document.use_for_ai)
+        album_notes.load_album_documents(document.album)  # unchanged file: the choice is kept
+        document.refresh_from_db()
+        self.assertFalse(document.use_for_ai)
+        page = client.get(reverse("library:album-detail", args=[document.album_id]))
+        self.assertContains(page, "incl. AI")
+        self.assertContains(page, "Tick this checkbox to include the file in the AI enrichment process.")
+
+    def test_a_file_can_be_named_and_classified(self):
+        self.run_extraction()
+        document = AlbumDocument.objects.get(file_path__endswith="notes.txt")
+        client = Client()
+        client.force_login(get_user_model().objects.create_user("namer", password="x"))
+        url = reverse("library:document-include", args=[document.pk])
+        reply = client.post(url, data='{"title": "Band bio", "kind": "bio"}', content_type="application/json")
+        self.assertEqual(reply.json()["kind"], "bio")
+        self.assertEqual(client.post(url, data='{"kind": "bogus"}', content_type="application/json").status_code, 400)
+        document.refresh_from_db()
+        self.assertEqual((document.title, document.kind, document.use_for_ai), ("Band bio", "bio", True))
+        page = client.get(reverse("library:album-detail", args=[document.album_id]))
+        self.assertContains(page, "Band bio")
+        self.assertContains(page, "Biography")
+        fake = FakeOllama()
+        self.run_extraction(fake)
+        self.assertTrue(any("=== Band bio (biography) ===" in call for call in fake.calls))
+
     def test_unreachable_ollama_still_reads_notes_and_lyrics(self):
-        with patch("library.services.insights.OllamaClient") as ollama:
+        with patch("library.services.insights.OllamaClient") as ollama, patch("library.services.insights.make_client", ollama):
             ollama.return_value.status.return_value = {"reachable": False, "model_ready": False, "models": [], "error": "Could not reach Ollama"}
             ollama.return_value.model = "qwen3:8b"
             stats = insights.run(lyrics_client=FakeLrclib())
@@ -241,7 +288,7 @@ class ExtractionTests(InsightTestCase):
         artist_page = client.get(reverse("library:artist-detail", args=(Artist.objects.get().pk,)))
         self.assertContains(artist_page, "Member left: Tom Hale")
         self.assertContains(artist_page, "(8 years)")
-        with patch("library.views.OllamaClient") as ollama:
+        with patch("library.views.OllamaClient") as ollama, patch("library.views.insight_settings", return_value={"provider": "ollama"}):
             ollama.return_value.status.return_value = {"reachable": False, "model_ready": False, "models": [], "error": "down"}
             ollama.return_value.url, ollama.return_value.model = "http://other-mac:11434", "qwen3:8b"
             lookup_page = client.get(reverse("library:enrichment"))
@@ -282,3 +329,48 @@ class ExtractionTests(InsightTestCase):
 
         self.assertContains(response, "Model running")
         self.assertContains(response, "status-dot status-scanning")
+
+
+class GeminiClientTests(TestCase):
+    def gemini(self, **kwargs):
+        from .services.gemini import GeminiClient
+        return GeminiClient(api_key="test-key", sleep=lambda seconds: None, **kwargs)
+
+    def answer(self, text):
+        import io, json as _json
+        return io.BytesIO(_json.dumps({"candidates": [{"content": {"parts": [{"text": text}]}}]}).encode())
+
+    def test_extract_sends_schema_and_key_in_header(self):
+        sent = {}
+
+        def fake(request, timeout=None):
+            sent["request"] = request
+            return self.answer('{"summary": "ok"}')
+
+        with patch("urllib.request.urlopen", fake):
+            data = self.gemini().extract("system", "text", {"type": "object"})
+        self.assertEqual(data, {"summary": "ok"})
+        request = sent["request"]
+        self.assertEqual(request.get_header("X-goog-api-key"), "test-key")
+        self.assertNotIn("test-key", request.full_url)
+        self.assertIn("gemini-3.6-flash:generateContent", request.full_url)
+        self.assertIn("responseJsonSchema", request.data.decode())
+
+    def test_rate_limit_is_retried_then_reported(self):
+        import io, urllib.error
+        from .services.gemini import GeminiError
+
+        def limited(request, timeout=None):
+            raise urllib.error.HTTPError(request.full_url, 429, "limit", {}, io.BytesIO(b"{}"))
+
+        with patch("urllib.request.urlopen", limited):
+            with self.assertRaisesMessage(GeminiError, "rate limit"):
+                self.gemini().extract("s", "t", {})
+
+    def test_missing_key_is_reported_without_a_request(self):
+        from .services.gemini import GeminiClient
+        with patch.dict("os.environ", {"GEMINI_API_KEY": ""}), \
+                patch("library.services.gemini.settings", return_value={"timeout_seconds": 5}):
+            state = GeminiClient().status()
+        self.assertFalse(state["reachable"])
+        self.assertIn("GEMINI_API_KEY", state["error"])

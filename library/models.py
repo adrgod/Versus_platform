@@ -278,6 +278,11 @@ class AlbumDocument(models.Model):
     file_mtime_ns = models.BigIntegerField(default=0)
     file_size = models.BigIntegerField(default=0)
     release_date = models.CharField(max_length=10, blank=True)
+    KINDS = [("notes", "Liner notes"), ("lyrics", "Lyrics"), ("promo", "Promo material"),
+             ("bio", "Biography"), ("other", "Other")]
+    title = models.CharField(max_length=200, blank=True)  # a name of your own; the file name is shown when empty
+    kind = models.CharField(max_length=10, choices=KINDS, default="notes")
+    use_for_ai = models.BooleanField(default=True)  # "Include for AI enrichment": unchecked files are never sent to the model
     when_loaded = models.DateTimeField(auto_now_add=True)
     when_updated = models.DateTimeField(auto_now=True)
 
@@ -289,6 +294,10 @@ class AlbumDocument(models.Model):
     @property
     def file_name(self):
         return Path(self.file_path).name
+
+    @property
+    def display_name(self):
+        return self.title or self.file_name
 
 
 class TrackLyrics(models.Model):
@@ -368,7 +377,7 @@ class TrackRating(models.Model):
 class AlbumRating(models.Model):
     user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="library_album_ratings")
     album = models.ForeignKey(Album, on_delete=models.CASCADE, related_name="ratings")
-    stars = models.PositiveSmallIntegerField()  # 1..5
+    stars = models.PositiveSmallIntegerField()  # 1..10, the same score as the album's review
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -10,7 +10,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import Album, Review, UserPreference
+from .models import Album, AlbumRating, Review, UserPreference
 
 MAX_HTML = 30000
 ALLOWED_TAGS = {"p", "br", "strong", "b", "em", "i", "u", "s", "strike", "del", "ul", "ol", "li",
@@ -107,11 +107,12 @@ def default_body(album, label=""):
 
 def review_context(request, album, label=""):
     review = Review.objects.filter(user=request.user, album=album).first()
+    rating = AlbumRating.objects.filter(user=request.user, album=album).values_list("stars", flat=True).first() or 0
     return {
         "review": review,
         "review_html": review.body_html if review else default_body(album, label),
         "review_author": review.author_name if review else reviewer_name(request.user),
-        "review_score": review.score if review else 0,
+        "review_score": rating or (review.score if review else 0),
     }
 
 
@@ -144,6 +145,7 @@ def save_review(request, album_id):
         user=request.user, album=album,
         defaults={"author_name": author or reviewer_name(request.user), "score": score,
                   "body_html": safe_html, "body_text": text})
+    AlbumRating.objects.update_or_create(user=request.user, album=album, defaults={"stars": score})  # one value
     return JsonResponse(_payload(review))
 
 

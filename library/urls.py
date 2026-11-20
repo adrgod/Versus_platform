@@ -47,6 +47,7 @@ urlpatterns = [
     path("reviews/", reviews.review_list, name="review-list"),
     path("albums/<int:album_id>/review/", reviews.save_review, name="review-save"),
     path("albums/<int:album_id>/review/delete/", reviews.delete_review, name="review-delete"),
+    path("documents/<int:document_id>/include/", views.document_include, name="document-include"),
     path("history/", user_data.history, name="history"),
     path("tracks/<int:track_id>/confirm/", views.confirm_tag_edit, name="confirm-tag-edit"),
 ]

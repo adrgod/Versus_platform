@@ -65,17 +65,22 @@
   });
 
   document.addEventListener("click", async (event) => {
-    const star = event.target.closest(".stars [data-star]");
+    const clear = event.target.closest(".stars [data-rate-clear]");
+    const star = clear || event.target.closest(".stars [data-star]");
     if (!star) return;
     const box = star.closest(".stars");
-    const picked = Number(star.dataset.star);
-    const next = Number(box.dataset.rateValue) === picked ? 0 : picked; // same star again clears
+    const picked = clear ? 0 : Number(star.dataset.star);
+    // Tracks: the same star again clears. Albums: only the cross clears.
+    const next = box.dataset.rateKind === "album" ? picked : (Number(box.dataset.rateValue) === picked ? 0 : picked);
     const result = await window.versusApi?.(`/me/rate/${box.dataset.rateKind}/${box.dataset.rateId}/`, { stars: next });
     if (!result) return;
     box.dataset.rateValue = String(result.stars);
     box.querySelectorAll("[data-star]").forEach((button) => {
       button.classList.toggle("is-on", Number(button.dataset.star) <= result.stars);
     });
+    if (box.dataset.rateKind === "album") {
+      document.dispatchEvent(new CustomEvent("versus:album-rated", { detail: { stars: result.stars } }));
+    }
   });
 
   const formatTime = (seconds) => {

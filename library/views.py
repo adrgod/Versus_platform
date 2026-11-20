@@ -1,3 +1,4 @@
+import json
 import mimetypes
 import re
 import shutil
@@ -14,7 +15,7 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, F, IntegerField, Q, Value
 from django.db.models.functions import Cast, Coalesce, Lower, NullIf, Substr, TruncDate
-from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.defaultfilters import pluralize
 from django.urls import reverse
@@ -40,7 +41,8 @@ from .services import discogs as discogs_service
 from .services import explorer, fill_missing
 from .services import resolver as resolver_api
 from .services import insights as insights_api
-from .services.ollama import OllamaClient
+from .services.gemini import GeminiClient
+from .services.ollama import OllamaClient, settings as insight_settings
 from .services import tag_editor
 from .services.carry_over import import_and_carry_over
 from .services.tag_writer import TagSnapshot, batch_files, get_job, plan_file, start_batch_write
@@ -407,6 +409,26 @@ def _job_is_about(job, *, artist_id, album_id=None):
 	return artist_id in artist_ids or Album.objects.filter(pk__in=album_ids, artist_id=artist_id).exists()
 
 
+def _last_notes_run(*, artist_id, album_id=None):
+	"""What the last finished Enrich Data with AI run said about this artist or album, for the page to show."""
+	job = enrichment_service.get_job("notes")
+	if not job or job.running or not job.finished:
+		return None
+	album_ids = job.options.get("album_ids") or []
+	artist_ids = job.options.get("artist_ids") or []
+	if album_id is not None:
+		about = album_id in album_ids or artist_id in artist_ids or not (album_ids or artist_ids)
+	else:
+		about = artist_id in artist_ids or not (album_ids or artist_ids) or Album.objects.filter(pk__in=album_ids, artist_id=artist_id).exists()
+	if not about:
+		return None
+	stats = job.stats
+	lines = [line for _, line in (stats.report if stats else [])][:12]
+	problems = ([job.error] if job.error else []) + ([stats.extraction_skipped] if stats and stats.extraction_skipped else []) \
+		+ [error for error in (stats.errors if stats else [])][:5]
+	return {"finished": job.finished, "lines": lines, "problems": problems}
+
+
 @login_required
 def artist_detail(request, artist_id):
 	artist = get_object_or_404(Artist, pk=artist_id)
@@ -444,6 +466,7 @@ def artist_detail(request, artist_id):
 		"formed": artist.resolved_formed_year,
 		"matched_on": _matched_on(artist=artist),
 		"job": job,
+		"last_notes": _last_notes_run(artist_id=artist.pk),
 		"job_here": _job_is_about(job, artist_id=artist.pk),
 		"importing": is_importing(),
 		"history": [
@@ -520,9 +543,10 @@ def album_detail(request, album_id):
 	]
 	track_ratings = dict(TrackRating.objects.filter(
 		user=request.user, track__album_id=album_id).values_list("track_id", "stars"))
-	album_rating = AlbumRating.objects.filter(user=request.user, album_id=album_id).values_list("stars", flat=True).first() or 0
+	review_info = review_context(request, album, label)
+	album_rating = review_info["review_score"]  # the album's rating and its review's score are one value
 	return render(request, "library/album_detail.html", {
-		**review_context(request, album, label),
+		**review_info,
 		"album": album,
 		"track_ratings": track_ratings,
 		"album_rating": album_rating,
@@ -557,9 +581,11 @@ def album_detail(request, album_id):
 		"moods": chips.get(FacetKind.MOOD, []),
 		"lyric_themes": chips.get(FacetKind.LYRIC_THEME, []),
 		"documents": AlbumDocument.objects.filter(album_id=album_id).order_by("file_path"),
+		"document_kinds": AlbumDocument.KINDS,
 		"lyric_tracks": lyric_tracks,
 		"matched_on": _matched_on(album=album),
 		"job": job,
+		"last_notes": _last_notes_run(artist_id=album.artist_id, album_id=album_id),
 		"job_here": _job_is_about(job, artist_id=album.artist_id, album_id=album_id),
 		"importing": is_importing(),
 	})
@@ -1186,7 +1212,8 @@ def enrichment_status(request):
 		.select_related("album", "album__artist")
 		.order_by(Lower("album__artist__artist_name"), Lower("album__album_name"))
 	)
-	ollama = OllamaClient()
+	gemini = insight_settings().get("provider") == "gemini"
+	ollama = GeminiClient() if gemini else OllamaClient()
 	return render(request, "library/enrichment.html", {
 		"artist_counts": artist_counts,
 		"album_counts": album_counts,
@@ -1209,7 +1236,7 @@ def enrichment_status(request):
 			"extracted": AlbumInsight.objects.filter(status=EnrichmentStatus.MATCHED).count(),
 			"failed": AlbumInsight.objects.filter(status=EnrichmentStatus.ERROR).count(),
 		},
-		"ollama": {**ollama.status(), "url": ollama.url, "model": ollama.model},
+		"ollama": {**ollama.status(), "url": ollama.url, "model": ollama.model, "gemini": gemini},
 	})
 
 
@@ -1315,6 +1342,30 @@ def enrichment_stop(request):
 	if enrichment_service.stop_job(kind):
 		messages.info(request, f"{enrichment_service.JOB_LABELS.get(kind, 'The job')} will stop after the current item.")
 	return redirect("library:enrichment")
+
+
+@login_required
+@require_POST
+def document_include(request, document_id):
+	"""Tick or untick "Include for AI enrichment" for one liner-notes file."""
+	document = get_object_or_404(AlbumDocument, pk=document_id)
+	try:
+		data = json.loads(request.body or b"{}")
+		changes = {}
+		if "include" in data:
+			changes["use_for_ai"] = bool(data["include"])
+		if "title" in data:
+			changes["title"] = str(data["title"]).strip()[:200]
+		if "kind" in data:
+			if data["kind"] not in dict(AlbumDocument.KINDS):
+				return HttpResponseBadRequest("Unknown kind")
+			changes["kind"] = data["kind"]
+	except (ValueError, AttributeError, TypeError):
+		return HttpResponseBadRequest("Invalid request")
+	for name, value in changes.items():
+		setattr(document, name, value)
+	document.save(update_fields=list(changes) or None)
+	return JsonResponse({"ok": True, "include": document.use_for_ai, "title": document.title, "kind": document.kind})
 
 
 @login_required

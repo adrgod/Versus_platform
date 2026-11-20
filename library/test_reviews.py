@@ -44,6 +44,35 @@ class ReviewTests(TestCase):
         self.assertNotIn("(", default_body(self.album, ""))
         self.assertIn("<p>(Torrid)</p>", default_body(self.album, "Torrid"))
 
+    def test_album_rating_and_review_score_are_one_value_out_of_ten(self):
+        from .models import AlbumRating
+        rate = reverse("library:rate", args=("album", self.album.pk))
+        post(self.client, rate, {"stars": 7})
+        self.assertEqual(AlbumRating.objects.get().stars, 7)
+        self.assertEqual(post(self.client, rate, {"stars": 11}).status_code, 400)
+        page = self.client.get(reverse("library:album-detail", args=(self.album.pk,)))
+        self.assertContains(page, 'data-review-score data-value="7"')  # the review box shows the same score
+        post(self.client, self.url, {"score": 9, "html": "<p>x</p>", "author": ""})
+        self.assertEqual(AlbumRating.objects.get().stars, 9)  # saving the review sets the rating
+        post(self.client, rate, {"stars": 4})
+        self.assertEqual(Review.objects.get().score, 4)  # rating the album sets the review's score
+        self.assertEqual(post(self.client, rate, {"stars": 0}).json()["stars"], 0)  # the cross removes the rating
+        self.assertFalse(AlbumRating.objects.exists())
+        self.assertEqual(Review.objects.get().score, 0)  # and the review's score, but the review stays
+        page = self.client.get(reverse("library:album-detail", args=(self.album.pk,)))
+        self.assertContains(page, "data-rate-clear")
+        self.assertContains(page, "data-review-clear")
+        self.assertContains(page, f'data-rate-url="{rate}"')
+        self.assertContains(self.client.get(reverse("library:review-list")), "no score")
+
+    def test_clearing_a_rating_without_a_review(self):
+        from .models import AlbumRating
+        rate = reverse("library:rate", args=("album", self.album.pk))
+        post(self.client, rate, {"stars": 5})
+        self.assertEqual(post(self.client, rate, {"stars": 0}).json()["stars"], 0)
+        self.assertFalse(AlbumRating.objects.exists())
+        self.assertFalse(Review.objects.exists())
+
     def test_save_update_and_name_fallback(self):
         result = post(self.client, self.url, {"score": 8, "html": "<p>Great <b>riffs</b></p>", "author": ""})
         self.assertEqual(result.status_code, 200)

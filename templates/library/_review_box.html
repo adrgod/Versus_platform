@@ -1,11 +1,11 @@
-<section class="review-section" aria-label="Your review" data-review data-save-url="{% url 'library:review-save' album.album_id %}" data-delete-url="{% url 'library:review-delete' album.album_id %}">
+<section class="review-section" aria-label="Your review" data-review data-save-url="{% url 'library:review-save' album.album_id %}" data-delete-url="{% url 'library:review-delete' album.album_id %}" data-rate-url="{% url 'library:rate' 'album' album.album_id %}">
   {% csrf_token %}
   <div class="section-heading"><div><span class="eyebrow">YOUR WORDS</span><h2>Review</h2></div>
     <span class="review-meta" data-review-meta>{% if review %}Written {{ review.written_at|date:"j M Y" }}{% if review.updated_at|date:"Ymd" != review.written_at|date:"Ymd" %} · edited {{ review.updated_at|date:"j M Y" }}{% endif %}{% else %}Not written yet{% endif %}</span></div>
   <div class="review-fields">
     <label class="review-author">Reviewer<input type="text" maxlength="100" value="{{ review_author }}" data-review-author placeholder="Name shown with your review" autocomplete="name"></label>
     <div class="review-score-field"><span id="review-score-label">Score</span>
-      <span class="review-score" role="group" aria-labelledby="review-score-label" data-review-score data-value="{{ review_score }}">{% for n in "1234567890" %}<button type="button" class="review-star{% if forloop.counter <= review_score %} is-on{% endif %}" data-review-star="{{ forloop.counter }}" aria-label="{{ forloop.counter }} out of 10" title="{{ forloop.counter }}/10">★</button>{% endfor %}</span>
+      <span class="review-score" role="group" aria-labelledby="review-score-label" data-review-score data-value="{{ review_score }}"><button type="button" class="rate-clear" data-review-clear aria-label="Remove rating" title="Remove rating">✕</button>{% for n in "1234567890" %}<button type="button" class="review-star{% if forloop.counter <= review_score %} is-on{% endif %}" data-review-star="{{ forloop.counter }}" aria-label="{{ forloop.counter }} out of 10" title="{{ forloop.counter }}/10">★</button>{% endfor %}</span>
       <output class="review-score-value" data-review-score-value>{% if review_score %}{{ review_score }}/10{% else %}—/10{% endif %}</output></div>
   </div>
   <div class="review-editor">

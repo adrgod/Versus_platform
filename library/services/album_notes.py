@@ -97,13 +97,19 @@ def find_release_date(text):
     return ""
 
 
-def load_album_documents(album, track_paths=None):
-    """Store the album's note files; unchanged files are not read again, removed ones are dropped."""
+def load_album_documents(album, track_paths=None, report=None):
+    """Store the album's note files; unchanged files are not read again, removed ones are dropped.
+
+    ``report`` (a list) receives plain sentences about what was found, so the page can explain an empty result.
+    """
+    report = [] if report is None else report
     if track_paths is None:
         track_paths = list(album.track_set.values_list("track_file_path", flat=True))
     track_paths = [path for path in track_paths if path and repository.is_allowed_file(path)]
     folder = album_folder_for(track_paths)
     if folder is None:
+        report.append("The album folder was not found: none of its tracks points to a file on disk "
+                      "(try Read Local MP3 Tags, or check the music folder is available).")
         return []
 
     track_stems = {Path(path).stem for path in track_paths}
@@ -115,6 +121,8 @@ def load_album_documents(album, track_paths=None):
     except OSError:
         files = []
 
+    if not files:
+        report.append(f"No .txt, .nfo or .pdf file found in {folder}.")
     existing = {document.file_path: document for document in album.documents.all()}
     kept = []
     for path in files:
@@ -125,8 +133,15 @@ def load_album_documents(album, track_paths=None):
             continue
         try:
             text = read_text(path)
-        except Exception:  # an unreadable or encrypted PDF is skipped, not fatal
+        except ImportError:
             text = ""
+            report.append(f"{path.name}: reading PDFs needs the pypdf package (run: pip install pypdf).")
+        except Exception as error:  # an unreadable or encrypted PDF is skipped, not fatal
+            text = ""
+            report.append(f"{path.name}: could not be read ({type(error).__name__}).")
+        else:
+            if not text:
+                report.append(f"{path.name}: no text found in it (a scanned PDF is only pictures).")
         if not text:
             if document:
                 document.delete()
@@ -140,4 +155,6 @@ def load_album_documents(album, track_paths=None):
         kept.append(document)
     for stale in existing.values():
         stale.delete()
+    if kept:
+        report.append(f"Read {len(kept)} file{'s' if len(kept) != 1 else ''} from {folder}: {', '.join(Path(d.file_path).name for d in kept)}.")
     return kept

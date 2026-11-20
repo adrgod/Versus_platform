@@ -10,10 +10,9 @@
         "discogs_token": "LvYfoQFucQqfJrlouLAkKxPeUCuYfrNJCcxXmSNd"
     },
     "insights": {
-        "ollama_url": "http://localhost:11434",
-        "model": "qwen3.8:latest",
-        "context_tokens": 16384,
-        "chunk_chars": 24000,
-        "timeout_seconds": 600
+        "provider": "gemini",
+        "gemini_model": "gemini-3.6-flash",
+        "gemini_min_interval": 6,
+        "gemini_retries": 4
     }
 }

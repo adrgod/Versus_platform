@@ -828,6 +828,30 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .detail-copy .job-strip { margin: 12px 0 0; }
 .job-strip .status-dot { flex: 0 0 auto; }
 .job-strip small { color: var(--muted); font-size: 13px; }
+.doc-list { display: grid; gap: 8px; }
+.doc-row { display: flex; align-items: stretch; }
+.doc-row .text-panel { flex: 1 1 auto; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+/* The tick box is a cell joined to the file box: same border and background, no gap between them. */
+.doc-check { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 58px; padding: 12px 4px; box-sizing: border-box; cursor: pointer;
+  border: 1px solid var(--line); border-right: 0; border-radius: var(--radius) 0 0 var(--radius); background: var(--surface-muted); box-shadow: var(--shadow-sm); }
+.doc-check:hover { background: var(--surface-hover); }
+.doc-check input { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+.doc-check span { font-size: 11px; line-height: 1.2; color: var(--muted); white-space: nowrap; }
+.doc-kind { padding: 1px 8px; font-size: 12px; color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 999px; }
+.doc-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; padding: 4px 18px 12px; }
+.doc-fields label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.doc-fields input, .doc-fields select { font: inherit; font-size: 14px; padding: 6px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
+.doc-fields input { min-width: min(100%, 22rem); }
+.doc-saved { font-size: 12px; color: var(--muted); }
+.doc-saved.is-error { color: var(--danger, #b3261e); }
+.doc-include { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.doc-include input { margin: 0; }
+.doc-include[data-state="saved"]::after { content: "saved"; color: var(--muted); font-size: 12px; }
+.doc-include[data-state="error"]::after { content: "not saved"; color: var(--danger, #b3261e); font-size: 12px; }
+.result-strip { display: block; }
+.result-strip ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.result-strip .problem { color: var(--danger, #b3261e); font-weight: 600; }
+.result-strip.has-problem { border-color: var(--danger, #b3261e); }
 .job-strip .quiet-link { margin-left: auto; font-size: 13px; }
 
 /* Busy state while a submitted action is working */
@@ -976,3 +1000,11 @@ tr:hover .row-arrow { color: var(--accent-text) !important; }
 .review-card-score { font-weight: 650; color: var(--accent-text); white-space: nowrap; }
 .review-card-meta { margin: 4px 0 8px; font-size: 13px; color: var(--muted); }
 .review-card-excerpt { margin: 0; color: var(--ink-2); line-height: 1.55; }
+
+/* the cross before a rating: removes it; it looks like an unlit star of the same widget */
+.rate-clear { background: none; border: 0; padding: 0 1px; line-height: 1; font-weight: 400; cursor: pointer; }
+.stars .rate-clear { font-size: 1.05rem; color: var(--muted, #9aa0a6); opacity: .55; }
+.review-score .rate-clear { font-size: 22px; color: var(--line-strong); }
+.stars .rate-clear:hover { color: var(--accent, #6366f1); opacity: 1; }
+.review-score .rate-clear:hover { color: var(--accent); }
+.rate-clear:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }

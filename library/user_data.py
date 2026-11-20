@@ -7,7 +7,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import Album, AlbumRating, PlayEvent, Track, TrackRating, UserPreference
+from .models import Album, AlbumRating, PlayEvent, Review, Track, TrackRating, UserPreference
 
 DISPLAY_KEYS = ("theme", "accent", "grid", "corners", "motion")
 EQ_BANDS = ("60", "250", "1000", "4000", "12000")
@@ -78,21 +78,24 @@ def record_play(request, track_id):
     return JsonResponse({"ok": True})
 
 
-def _stars(request):
+MAX_STARS = {"track": 5, "album": 10}  # an album is rated 1-10, the same score as its review
+
+
+def _stars(request, top=5):
     try:
         stars = int(json.loads(request.body or b"{}").get("stars", 0))
     except (ValueError, AttributeError, TypeError):
         return None
-    return stars if 0 <= stars <= 5 else None
+    return stars if 0 <= stars <= top else None
 
 
 @login_required
 @require_POST
 def rate(request, kind, object_id):
-    """Set (1-5) or clear (0) the user's star rating of a track or an album."""
-    stars = _stars(request)
+    """Set or clear (0) the user's rating: 1-5 stars for a track, 1-10 for an album (the same score as its review)."""
+    stars = _stars(request, MAX_STARS.get(kind, 5))
     if stars is None:
-        return HttpResponseBadRequest("stars must be 0-5")
+        return HttpResponseBadRequest(f"stars must be 0-{MAX_STARS.get(kind, 5)}")
     if kind == "track":
         model, field, target = TrackRating, "track", get_object_or_404(Track, pk=object_id)
     elif kind == "album":
@@ -100,10 +103,14 @@ def rate(request, kind, object_id):
     else:
         return HttpResponseBadRequest("kind must be track or album")
     lookup = {"user": request.user, field: target}
+    review = Review.objects.filter(user=request.user, album=target).first() if kind == "album" else None
     if stars == 0:
         model.objects.filter(**lookup).delete()
     else:
         model.objects.update_or_create(**lookup, defaults={"stars": stars})
+    if review and review.score != stars:  # the album's rating and its review's score are one value (0 = none)
+        review.score = stars
+        review.save(update_fields=["score", "updated_at"])
     return JsonResponse({"stars": stars})
 
 

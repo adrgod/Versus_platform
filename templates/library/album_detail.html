@@ -42,7 +42,18 @@
   {% if lyric_themes %}<div class="tag-chips"><span class="eyebrow chip-label">THEMES</span>{% for chip in lyric_themes %}<a class="tag-chip" href="{{ chip.url }}">{{ chip.name }}</a>{% endfor %}</div>{% endif %}
   <div class="text-panels">{% for item in lyric_tracks %}<details class="text-panel"><summary><strong>{{ item.track.track_name }}</strong><small>{% if item.lyrics.instrumental %}instrumental{% elif item.lyrics.source == "lrclib" %}from LRCLIB{% elif item.lyrics.source == "tag" %}from the MP3 tag{% else %}from a lyrics file{% endif %}</small></summary>{% if item.lyrics.text %}<pre>{{ item.lyrics.text }}</pre>{% endif %}</details>{% endfor %}</div>
 </section>{% endif %}
-{% if documents %}<section class="genre-section" aria-label="Liner notes"><div class="section-heading"><div><span class="eyebrow">FOUND IN THE ALBUM FOLDER</span><h2>Liner notes</h2></div></div>
-  <div class="text-panels">{% for document in documents %}<details class="text-panel" {% if forloop.first %}open{% endif %}><summary><strong>{{ document.file_name }}</strong><small>{{ document.file_type|upper }} · {{ document.text|wordcount }} words{% if document.release_date %} · release date {{ document.release_date }}{% endif %}</small></summary><pre>{{ document.text }}</pre></details>{% endfor %}</div>
-</section>{% endif %}
+<section class="genre-section" aria-label="Liner notes"><div class="section-heading"><div><span class="eyebrow">FOUND IN THE ALBUM FOLDER</span><h2>Liner notes</h2></div></div>
+  {% if not documents %}<p class="quiet-note">No .txt or .pdf file has been read from this album's folder yet. Click <strong>Enrich Data with AI</strong> above to read them; the text then appears here.</p>{% endif %}
+  {% if documents %}<p class="quiet-note">Tick the files Enrich Data with AI should read. Open a file to read it, name it or say what it is.</p>{% endif %}
+  <div class="doc-list">{% for document in documents %}<div class="doc-row">
+    <label class="doc-check" title="Tick this checkbox to include the file in the AI enrichment process."><input type="checkbox" data-doc-include="{% url 'library:document-include' document.pk %}"{% if document.use_for_ai %} checked{% endif %} aria-label="Include {{ document.display_name }} for AI enrichment"><span>incl. AI</span></label>
+    <details class="text-panel" {% if forloop.first %}open{% endif %}><summary><strong data-doc-name>{{ document.display_name }}</strong><span class="doc-kind" data-doc-kind-label>{{ document.get_kind_display }}</span><small>{{ document.file_type|upper }}{% if document.title %} · {{ document.file_name }}{% endif %} · {{ document.text|wordcount }} words{% if document.release_date %} · release date {{ document.release_date }}{% endif %}</small></summary>
+      <div class="doc-fields" data-doc-fields data-url="{% url 'library:document-include' document.pk %}">
+        <label>Name<input type="text" maxlength="200" value="{{ document.title }}" placeholder="{{ document.file_name }}" data-doc-title></label>
+        <label>This file is<select data-doc-kind>{% for value, label in document_kinds %}<option value="{{ value }}"{% if value == document.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <span class="doc-saved" role="status" data-doc-saved></span>
+      </div>
+      <pre>{{ document.text }}</pre></details>
+  </div>{% endfor %}</div>
+</section>
 {% endblock %}

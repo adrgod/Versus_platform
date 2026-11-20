@@ -27,3 +27,7 @@ Include with: scope="album_id"|"artist_id", object_id, noun ("album"|"artist").
   <span><strong>{{ job.label }}</strong> is running{% if job.stats.current %} · {{ job.stats.current }}{% endif %}</span>
   {% if job_here %}<small>This page updates when it finishes.</small>{% else %}<a class="quiet-link" href="{% url 'library:enrichment' %}">See progress <span>↗</span></a>{% endif %}
 </div>{% endif %}
+{% if last_notes and not job.running %}<div class="job-strip result-strip{% if last_notes.problems %} has-problem{% endif %}" role="status">
+  <strong>Enrich Data with AI finished</strong><small>{{ last_notes.finished|date:"H:i" }}</small>
+  <ul>{% for problem in last_notes.problems %}<li class="problem">{{ problem }}</li>{% endfor %}{% for line in last_notes.lines %}<li>{{ line }}</li>{% endfor %}{% if not last_notes.lines and not last_notes.problems %}<li>Nothing was found to read or extract.</li>{% endif %}</ul>
+</div>{% endif %}

@@ -55,6 +55,11 @@ album musicians and label. MP3 tags and the tag-derived columns are never change
 - Configure `insights` in `config.json`: `ollama_url` (can be another machine, e.g. `http://my-mac.local:11434`)
   and `model` (default `qwen3:8b`, install with `ollama pull qwen3:8b`). Without a reachable model, notes and
   lyrics are still read; facts are extracted on a later run. Unchanged text is never sent to the model twice.
+- Online alternative: set `"provider": "gemini"` under `insights` (optionally `"gemini_model"`, default
+  `gemini-3.6-flash`) and put a key from [Google AI Studio](https://aistudio.google.com/apikey) in the
+  `GEMINI_API_KEY` environment variable (preferred) or `insights.gemini_api_key`. Calls are spaced out for the free
+  tier's rate limit. On the free tier Google may use what you send to improve its products, so notes and lyrics
+  leave your machine; remove `provider` to go back to Ollama.
 - Options: `--refresh`, `--artist NAME`, `--no-extract`, `--no-online-lyrics`. Needs `pypdf` (in requirements.txt).
 
 # Steps on the Roadmap

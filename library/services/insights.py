@@ -27,6 +27,7 @@ from library.models import (
 )
 from library.services import album_notes, local_credits, lyrics, resolver
 from library.services.enrichment import link_facets
+from library.services.gemini import GeminiClient
 from library.services.ollama import OllamaClient, OllamaError, settings
 
 PROMPT_VERSION = "2"
@@ -323,12 +324,14 @@ class InsightStats:
     llm_duration_seconds: float = 0
     extraction_skipped: str = ""
     errors: list = field(default_factory=list)
+    report: list = field(default_factory=list)  # (album label, sentence) pairs shown after the run
     current: str = ""
     model_running: bool = False
 
 
 def notes_text_of(documents):
-    return "\n\n".join(f"=== {document.file_name} ===\n{document.text}" for document in documents)
+    return "\n\n".join(
+        f"=== {document.display_name} ({document.get_kind_display().lower()}) ===\n{document.text}" for document in documents)
 
 
 def lyrics_text_of(track_lyrics):
@@ -342,7 +345,8 @@ def process_album(album, *, client=None, lyrics_client=None, refresh=False, stat
     stats = stats or InsightStats()
     local_credits.refresh_tag_credits(album)
     tracks = list(Track.objects.filter(album=album).select_related("album__artist").order_by("track_discnumber", "track_number"))
-    documents = album_notes.load_album_documents(album, [track.track_file_path for track in tracks])
+    found = []
+    documents = album_notes.load_album_documents(album, [track.track_file_path for track in tracks], report=found)
     track_lyrics = []
     for track in tracks:
         item = lyrics.load_track_lyrics(track, client=lyrics_client, refresh=refresh)
@@ -351,14 +355,25 @@ def process_album(album, *, client=None, lyrics_client=None, refresh=False, stat
             stats.lyrics_found_online += item.source == "lrclib"
     stats.albums_with_notes += bool(documents)
     stats.tracks_with_lyrics += len(track_lyrics)
+    label = f"{album.artist.artist_name} – {album.album_name}"
+    stats.report.extend((label, line) for line in found[:6])
+    if track_lyrics:
+        stats.report.append((label, f"Lyrics found for {len(track_lyrics)} of {len(tracks)} tracks."))
 
     insight, _ = AlbumInsight.objects.get_or_create(album=album)
-    file_release = next((document.release_date for document in documents if document.release_date), "")
-    notes_text, lyrics_text = notes_text_of(documents), lyrics_text_of(track_lyrics)
+    included = [document for document in documents if document.use_for_ai]
+    if documents and not included:
+        stats.report.append((label, f"All {len(documents)} file{'s' if len(documents) != 1 else ''} are unchecked under Include for AI enrichment, so none was sent to the model."))
+    elif len(included) < len(documents):
+        stats.report.append((label, f"Only {len(included)} of {len(documents)} files are checked under Include for AI enrichment."))
+    file_release = next((document.release_date for document in included if document.release_date), "")
+    notes_text, lyrics_text = notes_text_of(included), lyrics_text_of(track_lyrics)
     if not notes_text and not lyrics_text:
+        stats.report.append((label, "Nothing to read: no liner notes and no lyrics were found."))
         _save_empty(insight, "No liner notes or lyrics found")
         return insight
     if client is None:
+        stats.report.append((label, "Notes and lyrics were read, but the AI model was not asked (see the message above)."))
         if file_release and not insight.release_date:
             insight.release_date = file_release
             insight.save(update_fields=["release_date"])
@@ -366,6 +381,7 @@ def process_album(album, *, client=None, lyrics_client=None, refresh=False, stat
 
     input_hash = hashlib.sha256("\x00".join([PROMPT_VERSION, client.model, notes_text, lyrics_text]).encode()).hexdigest()
     if not refresh and insight.status == EnrichmentStatus.MATCHED and insight.input_hash == input_hash:
+        stats.report.append((label, "Facts were already extracted from this same text, so the model was not asked again."))
         return insight
 
     chunk_chars = settings()["chunk_chars"]
@@ -408,6 +424,7 @@ def process_album(album, *, client=None, lyrics_client=None, refresh=False, stat
         ])
         rebuild_artist_history(album.artist)
     stats.albums_extracted += 1
+    stats.report.append((label, f"Facts extracted by {client.model}."))
     return insight
 
 
@@ -458,6 +475,11 @@ def rebuild_artist_history(artist):
     link_facets(ArtistFacet, "artist", artist, links, source=NOTES_SOURCE)
 
 
+def make_client():
+    """The model that extracts facts: Gemini when ``insights.provider`` is "gemini", else local Ollama."""
+    return GeminiClient() if settings().get("provider") == "gemini" else OllamaClient()
+
+
 def run(*, refresh=False, album_ids=None, artist_ids=None, extract=True, online_lyrics=True,
         client=None, lyrics_client=None, progress=None, should_stop=None):
     """Process albums (all, or the given ones); returns InsightStats."""
@@ -470,7 +492,7 @@ def run(*, refresh=False, album_ids=None, artist_ids=None, extract=True, online_
     stats = InsightStats(albums_total=len(albums))
 
     if extract and client is None:
-        client = OllamaClient()
+        client = make_client()
         state = client.status()
         if not state["reachable"]:
             stats.extraction_skipped = state["error"]

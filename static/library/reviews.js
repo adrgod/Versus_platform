@@ -42,6 +42,29 @@
   };
   document.addEventListener("selectionchange", markActiveCommands);
 
+  // The album's own rating (the stars by its title) and the review score are one value: keep them in step.
+  document.addEventListener("versus:album-rated", (event) => {
+    document.querySelectorAll("[data-review]").forEach((root) => setScore(root, event.detail.stars));
+  });
+  const showAlbumRating = (value) => {
+    document.querySelectorAll('.stars[data-rate-kind="album"]').forEach((stars) => {
+      stars.dataset.rateValue = String(value);
+      stars.querySelectorAll("[data-star]").forEach((star) => star.classList.toggle("is-on", Number(star.dataset.star) <= value));
+    });
+  };
+
+  // A click on the review's stars (or its cross) is the album rating: save it now and show it in both places.
+  const rate = async (root, value) => {
+    const result = await window.versusApi?.(root.dataset.rateUrl, { stars: value });
+    if (!result) {
+      say(root, "Could not save the score. Try again.", "error");
+      return;
+    }
+    setScore(root, result.stars);
+    showAlbumRating(result.stars);
+    say(root, "");
+  };
+
   // Keep the text selection in the editor while a toolbar button is pressed.
   document.addEventListener("mousedown", (event) => {
     if (event.target.closest(".review-toolbar button")) event.preventDefault();
@@ -71,7 +94,13 @@
 
     const star = event.target.closest("[data-review-star]");
     if (star) {
-      setScore(box(star), Number(star.dataset.reviewStar));
+      rate(box(star), Number(star.dataset.reviewStar));
+      return;
+    }
+
+    const clear = event.target.closest("[data-review-clear]");
+    if (clear) {
+      rate(box(clear), 0);
       return;
     }
 
@@ -95,6 +124,7 @@
         say(root, result.data?.error || "Could not save the review. Try again.", "error");
         return;
       }
+      showAlbumRating(result.data.score);
       root.querySelector("[data-review-author]").value = result.data.author;
       root.querySelector("[data-review-meta]").textContent = `Written ${result.data.written} · saved`;
       save.textContent = "Update review";
